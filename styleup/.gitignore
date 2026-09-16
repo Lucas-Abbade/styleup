@@ -1,0 +1,30 @@
+# Segredos
+.env
+.env.local
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Modelos e caches pesados — nunca versionar
+.cache/
+models/
+*.onnx
+*.pt
+
+# Sistema
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

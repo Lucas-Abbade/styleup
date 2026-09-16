@@ -1,0 +1,55 @@
+# Sobe a aplicação completa: API e frontend.
+#
+#   docker compose up --build
+#   → frontend em http://localhost:8080
+#   → API      em http://localhost:8000/docs
+#
+# Sem um .env com credenciais do Supabase, a API sobe em modo demonstração, com
+# dados em memória e guarda-roupa de exemplo — e o conjunto funciona ponta a
+# ponta sem nenhuma configuração.
+
+services:
+  api:
+    build:
+      context: ./backend
+      args:
+        # false deixa a imagem em ~200 MB em vez de ~2,5 GB, sem o modelo de
+        # visão. A cor da peça continua sendo medida; só a categoria vira palpite.
+        COM_VISAO: "false"
+    ports:
+      - "8000:8000"
+    environment:
+      # o frontend servido pelo nginx chama a API a partir do navegador, então a
+      # origem é a do nginx
+      ORIGENS_PERMITIDAS: "http://localhost:8080,http://127.0.0.1:8080"
+      AMBIENTE: "docker"
+    env_file:
+      # opcional: só existe quando o time liga o Supabase
+      - path: .env
+        required: false
+    volumes:
+      # cache dos modelos: sem isto, cada recriação do contêiner baixa tudo de novo
+      - modelos:/root/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://localhost:8000/saude')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: "http://localhost:8000"
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  modelos:

@@ -1,0 +1,17 @@
+# Dependências do serviço de visão (módulos M1 e M2).
+#
+# Separadas de propósito: são ~2 GB e só quem mexe na visão precisa instalar.
+# O restante do time roda a API com o requirements.txt básico — as rotas de
+# visão só falham quando efetivamente chamadas.
+#
+#   pip install -r requirements.txt -r requirements-visao.txt
+#
+# Em máquina sem GPU, instale o torch de CPU antes (bem menor):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+-r requirements.txt
+
+torch>=2.5
+transformers>=4.48
+rembg>=2.0.60
+onnxruntime>=1.20
