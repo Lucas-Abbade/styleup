@@ -1,0 +1,17 @@
+O projeto está na sua pasta styleup na Área de Trabalho, já com um commit inicial do git.
+
+O que foi verificado, não só escrito: os 55 testes do backend passam em 0,2 s, a API sobe e responde (/saude, /eventos, /pecas/taxonomia retornam 200; /pecas sem token retorna 401), e o frontend compila com tsc limpo e gera o service worker do PWA.
+
+Dois defeitos apareceram durante a verificação e foram corrigidos: as explicações saíam com concordância errada ("camisa social branco" → agora "branca"), e o endpoint de taxonomia devolvia chave enquanto a tela de cadastro lia categoria — o TypeScript não pegou porque o tipo estava mentindo. Ambos têm teste agora.
+
+Onde está a substância:
+
+backend/app/services/recomendador.py — filtros rígidos, score ponderado e ranqueamento. Puro, sem banco nem rede, 100% coberto por teste. É aqui que se ajusta o comportamento.
+backend/app/services/taxonomia.py — as 24 categorias com papel, formalidade e faixa térmica. Adicionar uma peça nova é editar este dicionário; nada de retreino.
+supabase/migrations/ — esquema e RLS. O backend usa a chave anônima e repassa o JWT do usuário, então as políticas do banco valem mesmo dentro da API: um bug numa rota vira erro de permissão, não vazamento.
+
+Para começar: crie o projeto no Supabase, rode as duas migrações no SQL Editor, copie as chaves para o .env e siga o README. Backend leve instala em 30 s; só quem for mexer na visão computacional precisa dos 2 GB de torch.
+
+O ponto que exige decisão de vocês: o documento promete treinar modelo no M1 e vocês vão entregar zero-shot. Deixei em docs/atualizar-documento-de-visao.md a redação sugerida para as seções 1.2, 5.2 e 1.4, e as instruções para o RNF03 — mas não ajustem a meta de acurácia antes de medir, na semana 2, com fotos reais de vocês. Meta corrigida com dado em mãos é defensável; meta não atingida sem explicação, não.
+
+Quer que eu prepare o próximo passo — a prova de conceito da visão para medir a acurácia logo, ou o backlog das 21 operações em histórias de usuário?

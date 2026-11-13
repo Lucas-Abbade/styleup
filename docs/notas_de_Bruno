@@ -1,0 +1,110 @@
+STYLEUP - COMO RODAR O PROJETO (Windows / PowerShell)
+=====================================================
+
+Pasta do projeto: C:\Users\bruno\OneDrive\Desktop\styleup
+Precisa de DOIS terminais abertos ao mesmo tempo: um para o back-end e um para o front-end.
+
+
+PASSO 0 - ABRIR O PROJETO
+-------------------------
+1. Abra o VS Code.
+2. File > Open Folder > escolha a pasta "styleup" (a que tem backend, frontend e README).
+3. Abra o terminal: menu Terminal > New Terminal (ou Ctrl + ').
+
+
+TERMINAL 1 - BACK-END (API)
+---------------------------
+cd backend
+.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload --reload-dir app --port 8000 --env-file ../.env
+
+Deve aparecer:  "Application startup complete."
+A API fica em http://127.0.0.1:8000
+
+Se o PowerShell reclamar de "execução de scripts desabilitada", rode uma vez:
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+
+TERMINAL 2 - FRONT-END (site)
+-----------------------------
+(abra outro terminal com o botao "+" do painel de terminal)
+cd frontend
+npm run dev
+
+Depois abra no navegador:  http://localhost:5173
+
+
+ANTES DE USAR (1 minuto)
+------------------------
+- Se o app pedir login, entre de novo (a sessao pode ter expirado).
+- Se for apresentar o projeto: faca UMA analise de foto antes. A primeira
+  analise do dia e mais lenta porque carrega os modelos na memoria.
+
+
+COMO PARAR
+----------
+Em cada terminal: Ctrl + C
+
+
+SE DER ERRO
+-----------
+1) "Token invalido ... getaddrinfo failed"
+   A API esta lendo uma URL errada do Supabase. Verifique:
+       Get-ChildItem Env:SUPABASE*
+   Se aparecer algum valor (principalmente com xxxxxxxxxxxx), limpe e suba de novo:
+       Remove-Item Env:SUPABASE_URL, Env:SUPABASE_ANON_KEY, Env:SUPABASE_JWT_SECRET
+   Para nao voltar: Iniciar > "Editar as variaveis de ambiente para sua conta"
+   e apague as SUPABASE_* de la.
+
+2) Mudei o arquivo .env e nada mudou
+   O --reload NAO le o .env de novo. Pare com Ctrl + C e suba o uvicorn outra vez.
+   Salve o .env (Ctrl + S) antes.
+
+3) "No module named ..."
+   Esta fora do ambiente virtual. Rode de novo:
+       cd backend
+       .venv\Scripts\Activate.ps1
+   O prompt precisa mostrar (.venv) no comeco da linha.
+   Se faltar pacote de verdade:
+       pip install -r requirements.txt
+       pip install -r requirements-visao.txt
+
+4) Front-end: erro de pacote ou "vite nao encontrado"
+       cd frontend
+       npm install
+       npm run dev
+
+5) Porta ocupada (8000 ou 5173)
+   Feche o terminal antigo que ainda esta rodando, ou use outra porta:
+       uvicorn app.main:app --reload --reload-dir app --port 8001 --env-file ../.env
+   (se mudar a porta da API, troque tambem VITE_API_URL no arquivo frontend\.env.local
+   e reinicie o npm run dev)
+
+
+TESTES AUTOMATICOS DO BACK-END
+------------------------------
+cd backend
+.venv\Scripts\Activate.ps1
+pytest
+
+
+GIT (antes de mexer e depois de mexer)
+--------------------------------------
+git status
+git pull
+git checkout -b bruno/backend        (so na primeira vez, para criar sua branch)
+git add .
+git commit -m "descricao do que mudou"
+git push
+
+NUNCA commitar o arquivo .env (tem as chaves do Supabase).
+
+
+PENDENCIAS DE LIMPEZA
+---------------------
+[ ] Apagar a linha  print("DEBUG url:" ...)  do backend\app\auth.py
+[ ] Trocar o SUPABASE_JWT_SECRET no painel do Supabase (apareceu em print)
+[ ] Mover o projeto para fora do OneDrive (ex.: C:\dev\styleup) e recriar o .venv
+[ ] Conferir quantos testes o pytest roda (o slide diz 55)
+[ ] Cor diferente no chip e no texto da explicacao do look
+[ ] Botoes cortados na tela Guarda-roupa

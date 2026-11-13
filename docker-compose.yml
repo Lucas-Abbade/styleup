@@ -1,0 +1,19 @@
+# Sobe apenas a API. Banco, autenticação e armazenamento ficam no Supabase,
+# então não há Postgres nem MinIO local para manter.
+services:
+  api:
+    build:
+      context: ./backend
+      args:
+        COM_VISAO: "true"
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # cache dos modelos: sem isto, cada recriação do contêiner baixa tudo de novo
+      - modelos:/root/.cache
+    restart: unless-stopped
+
+volumes:
+  modelos:
