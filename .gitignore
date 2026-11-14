@@ -28,3 +28,12 @@ models/
 Thumbs.db
 .idea/
 .vscode/
+
+# Fotos do conjunto de avaliação: dados pessoais dos voluntários
+backend/avaliacao/fotos/*
+!backend/avaliacao/fotos/.gitkeep
+backend/avaliacao/relatorio.*
+
+# Saídas de teste do frontend
+frontend/test-results/
+frontend/playwright-report/
