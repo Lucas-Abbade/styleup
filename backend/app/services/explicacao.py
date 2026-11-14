@@ -10,18 +10,80 @@ from __future__ import annotations
 
 import logging
 
-from .cor import concordar, nomear
-from .recomendador import Contexto, Look
-from .taxonomia import DRESS_CODE, POR_CHAVE
+from .cor import TERROSAS, concordar, nomear
+from .recomendador import (
+    ESTILO_ATENDIDO, LIMIAR_SOBREPOSICAO, Contexto, Look, Peca, _familias_de_matiz,
+    cor_efetiva, nota_estilo_pedido,
+)
+from .taxonomia import DRESS_CODE, ESTILOS, NIVEL_FORMALIDADE, POR_CHAVE
 
 log = logging.getLogger(__name__)
 
 
-def _descrever(peca) -> str:
+def _nome_da_cor(peca: Peca) -> str:
+    """O nome que está no banco — o mesmo do chip da interface.
+
+    Recalcular a partir do HSV fazia o texto discordar do chip quando o usuário
+    corrigia a cor. O cálculo só vale para peças sem nome gravado.
+    """
+    return peca.cor_nome or nomear(*peca.cor_hsv)[0]
+
+
+def _descrever(peca: Peca) -> str:
     cat = POR_CHAVE.get(peca.categoria)
     rotulo = cat.rotulo.lower() if cat else peca.categoria.replace("-", " ")
-    nome_cor, _ = nomear(*peca.cor_hsv)
-    return f"{rotulo} {concordar(nome_cor, cat.genero if cat else 'm')}"
+    return f"{rotulo} {concordar(_nome_da_cor(peca), cat.genero if cat else 'm')}"
+
+
+def _enumerar(itens: list[str]) -> str:
+    return itens[0] if len(itens) == 1 else ", ".join(itens[:-1]) + f" e {itens[-1]}"
+
+
+def paleta(look: Look) -> str:
+    """Classifica a paleta do look. Devolve uma chave de `_PALETAS`."""
+    pecas = list(look.pecas.values())
+    efetivas = [cor_efetiva(p) for p in pecas]
+    coloridas = [cor for cor, neutra in efetivas if not neutra]
+    nomes = [_nome_da_cor(p) for p in pecas]
+
+    if all(n in ("preto", "grafite") for n in nomes):
+        return "all-black"
+    if sum(n in TERROSAS for n in nomes) >= max(2, len(nomes) - 1):
+        return "terroso"
+    if not coloridas:
+        return "neutro"
+    if len(coloridas) == 1:
+        return "ponto-de-cor"
+    return "tonal" if _familias_de_matiz(coloridas) == 1 else "colorido"
+
+
+# chave -> (etiqueta curta para o título, expressão para o meio de uma frase)
+_PALETAS = {
+    "all-black": ("All black", "preto dos pés à cabeça"),
+    "terroso": ("Tons terrosos", "tons terrosos"),
+    "neutro": ("Neutros", "tons neutros"),
+    "ponto-de-cor": ("Ponto de cor", "tons neutros com um ponto de cor"),
+    "tonal": ("Tom sobre tom", "tom sobre tom"),
+    "colorido": ("Colorido", "cores que conversam entre si"),
+}
+
+
+def _estilo_atendido(look: Look, ctx: Contexto) -> bool:
+    return (ctx.estilo in ESTILOS
+            and nota_estilo_pedido(look, ctx.estilo) >= ESTILO_ATENDIDO)
+
+
+def titulo(look: Look, ctx: Contexto) -> str:
+    """Etiqueta curta do look, como "Casual • Tons terrosos".
+
+    O estilo pedido só vai para o título quando o look de fato o atende: chamar
+    de "All black" uma combinação com calça azul seria prometer o que não há.
+    """
+    valores = [p.formalidade for p in look.pecas.values()]
+    nivel = NIVEL_FORMALIDADE[min(5, max(1, round(sum(valores) / len(valores))))]
+    segundo = (ESTILOS[ctx.estilo]["rotulo"] if _estilo_atendido(look, ctx)
+               else _PALETAS[paleta(look)][0])
+    return f"{nivel} • {segundo}"
 
 
 def por_template(look: Look, ctx: Contexto, evento: str | None = None) -> str:
@@ -35,15 +97,21 @@ def por_template(look: Look, ctx: Contexto, evento: str | None = None) -> str:
 
     itens = [_descrever(p) for papel, p in look.pecas.items()
              if papel in ("superior", "inferior", "calcado")]
-    partes.append("Combinação de " + ", ".join(itens[:-1]) + f" e {itens[-1]}")
+    partes.append("Combinação de " + _enumerar(itens))
 
-    if "sobreposicao" in look.pecas:
+    tem_sobreposicao = "sobreposicao" in look.pecas
+    if tem_sobreposicao:
         partes.append(f"com {_descrever(look.pecas['sobreposicao'])} por cima")
 
     temp = ctx.temperatura_efetiva
     if temp is not None:
-        if temp < 15:
+        # mesmo limiar do motor: abaixo dele o look pede (e, se existir, traz) agasalho
+        if temp < LIMIAR_SOBREPOSICAO and tem_sobreposicao:
             partes.append(f"adequada aos {temp:.0f} °C previstos, que pedem agasalho")
+        elif temp < LIMIAR_SOBREPOSICAO:
+            partes.append(f"a opção mais quente do guarda-roupa para os {temp:.0f} °C "
+                          "previstos — vale levar um agasalho, porque não há "
+                          "sobreposição cadastrada")
         elif temp > 28:
             partes.append(f"leve para os {temp:.0f} °C previstos")
         else:
@@ -56,10 +124,35 @@ def por_template(look: Look, ctx: Contexto, evento: str | None = None) -> str:
         rotulo = DRESS_CODE.get(evento, {}).get("rotulo", evento)
         partes.append(f"no nível de formalidade esperado para {rotulo.lower()}")
 
+    if _estilo_atendido(look, ctx):
+        partes.append(f"na linha {ESTILOS[ctx.estilo]['rotulo'].lower()} que você pediu")
+
     if look.parcelas.get("cor", 0) >= 0.8:
         partes.append("e com cores que se harmonizam")
 
-    return ". ".join([partes[0] + (", " + ", ".join(partes[1:]) if len(partes) > 1 else "")]) + "."
+    texto = partes[0] + (", " + ", ".join(partes[1:]) if len(partes) > 1 else "") + "."
+    if look.acessorios:
+        texto += " Para completar: " + _enumerar([_descrever(a) for a in look.acessorios]) + "."
+    return texto
+
+
+def resumo(look: Look, ctx: Contexto) -> str:
+    """Uma linha para a tela do look: o porquê, sem repetir a lista de peças."""
+    cor = _PALETAS[paleta(look)][1]
+    if _estilo_atendido(look, ctx) and ctx.estilo != "all-black":
+        inicio = f"Look {ESTILOS[ctx.estilo]['rotulo'].lower()} em {cor}"
+    else:
+        inicio = f"Combinação em {cor}"
+    temp = ctx.temperatura_efetiva
+    if temp is None:
+        clima = "pensada para a ocasião"
+    elif temp < LIMIAR_SOBREPOSICAO:
+        clima = f"que segura os {temp:.0f} °C"
+    elif temp > 28:
+        clima = f"leve para os {temp:.0f} °C"
+    else:
+        clima = f"confortável para os {temp:.0f} °C"
+    return f"{inicio}, {clima}."
 
 
 def explicar(look: Look, ctx: Contexto, evento: str | None = None,
