@@ -1,14 +1,17 @@
+import '@fontsource-variable/dm-sans'
 import React from 'react'
-import { createRoot } from 'react-dom/client'
+import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-
-import App from './App'
+import { App } from './App'
+import { ProvedorDeAvisos } from './componentes/Avisos'
 import './estilos.css'
 
-createRoot(document.getElementById('root')!).render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <ProvedorDeAvisos>
+        <App />
+      </ProvedorDeAvisos>
     </BrowserRouter>
   </React.StrictMode>,
 )

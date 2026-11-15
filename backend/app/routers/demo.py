@@ -35,7 +35,10 @@ def ler_foto(caminho: str):
     if not guardada:
         raise ErroAPI(404, "foto_nao_encontrada", "Foto não encontrada.")
     return Response(guardada[0], media_type=guardada[1],
-                    headers={"Cache-Control": "private, max-age=3600"})
+                    headers={"Cache-Control": "private, max-age=3600",
+                             # sempre presente: a cópia em cache do <img> também
+                             # precisa servir ao fetch que exporta o look
+                             "Access-Control-Allow-Origin": "*"})
 
 
 @router.post("/reiniciar")

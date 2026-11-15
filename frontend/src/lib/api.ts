@@ -1,8 +1,24 @@
-import { supabase } from './supabase'
+/** Cliente da API do StyleUp. Toda chamada leva o JWT do usuário. */
+import { API_URL } from './config'
+import { tokenAtual } from './sessao'
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+export type Papel = 'superior' | 'inferior' | 'calcado' | 'sobreposicao' | 'acessorio'
 
-export type Papel = 'superior' | 'inferior' | 'calcado' | 'sobreposicao'
+export interface Peca {
+  id: string
+  codigo: string
+  papel: Papel
+  categoria: string
+  rotulo: string
+  formalidade: number
+  cor_nome: string
+  cor_hex: string
+  cor_hsv: number[]
+  neutra: boolean
+  disponivel: boolean
+  imagem_path: string | null
+  atributos: Record<string, string>
+}
 
 export interface Analise {
   categoria: string
@@ -18,18 +34,11 @@ export interface Analise {
   cor_hsv: number[]
   neutra: boolean
   confianca: Record<string, number>
+  confianca_baixa: boolean
+  recorte: string | null
 }
 
-export interface Peca extends Analise {
-  id: string
-  codigo: string
-  disponivel: boolean
-  imagem_path: string | null
-  criado_em: string
-}
-
-/** Entrada do catálogo de categorias. Note `chave`, não `categoria`. */
-export interface CategoriaTaxonomia {
+export interface Categoria {
   chave: string
   rotulo: string
   papel: Papel
@@ -37,6 +46,12 @@ export interface CategoriaTaxonomia {
   temp_min: number
   temp_max: number
   resiste_chuva: boolean
+}
+
+export interface Cor {
+  nome: string
+  hex: string
+  neutra: boolean
 }
 
 export interface PecaDoLook {
@@ -55,101 +70,176 @@ export interface Look {
   posicao: number
   score: number
   parcelas: Record<string, number>
+  titulo: string
+  resumo: string
   explicacao: string
+  salvo: boolean
+  aprovado: boolean | null
+  criado_em?: string | null
   pecas: PecaDoLook[]
 }
 
-export interface Recomendacao {
-  contexto: {
-    id: string
-    evento: string
-    formalidade_alvo: number
-    temperatura: number | null
-    sensacao: number | null
-    chuva_prob: number | null
-    clima_automatico: boolean
-  }
-  looks: Look[]
+export interface Contexto {
+  id: string
+  evento: string
+  evento_rotulo: string
+  estilo: string | null
+  temperatura: number | null
+  sensacao: number | null
+  chuva_prob: number | null
+  clima_automatico: boolean
+  entendido: string[]
 }
 
-export interface Evento {
+export interface Recomendacao {
+  contexto: Contexto
+  looks: Look[]
+  avisos: string[]
+}
+
+export interface Pedido {
+  evento?: string
+  texto?: string
+  estilo?: string
+  inspiracao?: string
+  latitude?: number
+  longitude?: number
+  temperatura?: number
+}
+
+export interface Inspiracao {
   chave: string
   rotulo: string
-  formalidade: number
+  icone: string
 }
 
-/** Toda chamada leva o token do Supabase; é ele que a RLS usa no banco. */
-async function requisitar<T>(caminho: string, init: RequestInit = {}): Promise<T> {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  if (!token) throw new Error('Sessão expirada. Entre novamente.')
+export interface Consentimento {
+  versao_vigente: string
+  aceito: boolean
+  aceito_em: string | null
+  localizacao: boolean
+  exigido: boolean
+}
 
-  const cabecalhos = new Headers(init.headers)
-  cabecalhos.set('Authorization', `Bearer ${token}`)
-  if (init.body && !(init.body instanceof FormData)) {
-    cabecalhos.set('Content-Type', 'application/json')
+export interface Perfil {
+  id: string
+  nome: string | null
+  email: string | null
+  consentimento: Consentimento
+  pesos: Record<string, number>
+}
+
+export interface Termo {
+  versao: string
+  titulo: string
+  resumo: string
+  controlador: string
+  contato: string
+  secoes: { titulo: string; itens: string[] }[]
+  finalidades: { chave: string; obrigatoria: boolean; rotulo: string }[]
+}
+
+export interface Metricas {
+  consultas: number
+  consultas_avaliadas: number
+  looks_mostrados: number
+  looks_aprovados: number
+  hit_rate_3: number | null
+  precision_3: number | null
+}
+
+export class ErroApi extends Error {
+  constructor(
+    public status: number,
+    public codigo: string,
+    mensagem: string,
+    public extras: Record<string, unknown> = {},
+  ) {
+    super(mensagem)
+  }
+}
+
+/** Disparado quando a API pede o aceite do termo; o App leva à tela certa. */
+export const EVENTO_CONSENTIMENTO = 'styleup:consentimento'
+export const EVENTO_SESSAO_EXPIRADA = 'styleup:sessao-expirada'
+
+async function requisitar<T>(caminho: string, opcoes: RequestInit = {}): Promise<T> {
+  const token = await tokenAtual()
+  let resposta: Response
+  try {
+    resposta = await fetch(`${API_URL}${caminho}`, {
+      ...opcoes,
+      headers: {
+        ...(opcoes.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...opcoes.headers,
+      },
+    })
+  } catch {
+    throw new ErroApi(0, 'sem_conexao', 'Sem conexão com o servidor. Verifique a internet e tente de novo.')
   }
 
-  const resposta = await fetch(`${BASE}${caminho}`, { ...init, headers: cabecalhos })
   if (!resposta.ok) {
     const corpo = await resposta.json().catch(() => ({}))
-    throw new Error(corpo.detail ?? `Falha na requisição (${resposta.status})`)
+    const erro = new ErroApi(
+      resposta.status,
+      corpo.codigo ?? 'erro',
+      corpo.erro ?? corpo.detail ?? 'Algo deu errado. Tente de novo.',
+      corpo,
+    )
+    if (erro.codigo === 'consentimento_pendente') window.dispatchEvent(new Event(EVENTO_CONSENTIMENTO))
+    if (erro.codigo === 'sessao_expirada' || erro.codigo === 'token_invalido')
+      window.dispatchEvent(new Event(EVENTO_SESSAO_EXPIRADA))
+    throw erro
   }
   return resposta.status === 204 ? (undefined as T) : resposta.json()
 }
 
-export const api = {
-  taxonomia: () => requisitar<CategoriaTaxonomia[]>('/pecas/taxonomia'),
-  eventos: () => requisitar<Evento[]>('/eventos'),
+const json = (corpo: unknown) => JSON.stringify(corpo)
 
-  analisarFoto: (arquivo: File) => {
+export const api = {
+  taxonomia: () => requisitar<Categoria[]>('/pecas/taxonomia'),
+  cores: () => requisitar<Cor[]>('/pecas/cores'),
+  inspiracoes: () => requisitar<Inspiracao[]>('/inspiracoes'),
+
+  analisar(foto: Blob) {
     const corpo = new FormData()
-    corpo.append('foto', arquivo)
+    corpo.append('foto', foto, 'foto.jpg')
     return requisitar<Analise>('/pecas/analisar', { method: 'POST', body: corpo })
   },
+  registrarPeca: (peca: Record<string, unknown>) =>
+    requisitar<Peca>('/pecas', { method: 'POST', body: json(peca) }),
+  listarPecas: () => requisitar<Peca[]>('/pecas'),
+  atualizarPeca: (id: string, mudancas: Partial<Peca>) =>
+    requisitar<Peca>(`/pecas/${id}`, { method: 'PATCH', body: json(mudancas) }),
+  removerPeca: (id: string) => requisitar<void>(`/pecas/${id}`, { method: 'DELETE' }),
 
-  registrarPeca: (peca: Partial<Analise> & { imagem_path?: string }) =>
-    requisitar<Peca>('/pecas', { method: 'POST', body: JSON.stringify(peca) }),
+  recomendar: (pedido: Pedido) =>
+    requisitar<Recomendacao>('/recomendacoes', { method: 'POST', body: json(pedido) }),
+  feedback: (look_id: string, aprovado: boolean) =>
+    requisitar<{ registrado: boolean }>('/feedback', { method: 'POST', body: json({ look_id, aprovado }) }),
+  salvarLook: (id: string, salvo: boolean) =>
+    requisitar<{ salvo: boolean }>(`/looks/${id}/salvo`, { method: 'PUT', body: json({ salvo }) }),
+  looksSalvos: () => requisitar<Look[]>('/looks?salvos=true&limite=50'),
+  metricas: () => requisitar<Metricas>('/metricas'),
 
-  listarPecas: (filtros: Record<string, string> = {}) => {
-    const q = new URLSearchParams(filtros).toString()
-    return requisitar<Peca[]>(`/pecas${q ? `?${q}` : ''}`)
+  perfil: () => requisitar<Perfil>('/perfil'),
+  atualizarNome: (nome: string) => requisitar<Perfil>('/perfil', { method: 'PUT', body: json({ nome }) }),
+  termo: () => requisitar<Termo>('/perfil/termo'),
+  aceitarTermo: (versao: string, localizacao: boolean) =>
+    requisitar<Consentimento>('/perfil/consentimento', { method: 'POST', body: json({ versao, localizacao }) }),
+  revogarTermo: () => requisitar<Consentimento>('/perfil/consentimento', { method: 'DELETE' }),
+  exportarDados: () => requisitar<Record<string, unknown>>('/perfil/exportar'),
+  excluirConta: (confirmacao: string) =>
+    requisitar<{ excluida: boolean }>('/perfil', { method: 'DELETE', body: json({ confirmacao }) }),
+
+  enviarFotoDemo(foto: Blob) {
+    const corpo = new FormData()
+    corpo.append('foto', foto, 'peca.webp')
+    return requisitar<{ caminho: string }>('/demo/fotos', { method: 'POST', body: corpo })
   },
-
-  atualizarPeca: (id: string, mudancas: Record<string, unknown>) =>
-    requisitar<Peca>(`/pecas/${id}`, { method: 'PATCH', body: JSON.stringify(mudancas) }),
-
-  removerPeca: (id: string) =>
-    requisitar<void>(`/pecas/${id}`, { method: 'DELETE' }),
-
-  recomendar: (contexto: {
-    evento: string
-    latitude?: number
-    longitude?: number
-    temperatura?: number
-  }) =>
-    requisitar<Recomendacao>('/recomendacoes', {
-      method: 'POST',
-      body: JSON.stringify(contexto),
-    }),
-
-  enviarFeedback: (look_id: string, aprovado: boolean) =>
-    requisitar<{ registrado: boolean; pesos: Record<string, number> }>('/feedback', {
-      method: 'POST',
-      body: JSON.stringify({ look_id, aprovado }),
-    }),
-
-  metricas: () => requisitar<Record<string, number | null>>('/metricas'),
 }
 
-/** Geolocalização opcional: se o usuário negar, o contexto segue sem clima. */
-export function posicaoAtual(): Promise<GeolocationCoordinates | null> {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null)
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve(p.coords),
-      () => resolve(null),
-      { timeout: 5000, maximumAge: 600_000 },
-    )
-  })
+export function mensagemDe(erro: unknown): string {
+  return erro instanceof Error ? erro.message : 'Algo deu errado. Tente de novo.'
 }

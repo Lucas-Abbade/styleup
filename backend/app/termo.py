@@ -21,8 +21,8 @@ CONTATO = "PREENCHER: e-mail de contato da equipe"
 def termo() -> dict:
     return {
         "versao": config.versao_termo,
-        "titulo": "Como o StyleUp usa os seus dados",
-        "resumo": ("O StyleUp guarda as fotos das suas roupas e o que você achou dos "
+        "titulo": "Como o Style Up usa os seus dados",
+        "resumo": ("O Style Up guarda as fotos das suas roupas e o que você achou dos "
                    "looks para montar combinações melhores. Você pode apagar tudo "
                    "quando quiser."),
         "controlador": CONTROLADOR,
@@ -72,7 +72,7 @@ def termo() -> dict:
                  f"Falar com a equipe: {CONTATO}.",
              ]},
             {"titulo": "Idade",
-             "itens": ["O StyleUp é destinado a maiores de 18 anos."]},
+             "itens": ["O Style Up é destinado a maiores de 18 anos."]},
         ],
         "finalidades": [
             {"chave": "essencial", "obrigatoria": True,

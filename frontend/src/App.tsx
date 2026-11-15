@@ -1,53 +1,138 @@
-import type { Session } from '@supabase/supabase-js'
-import { useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Component, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { BarraInferior } from './componentes/BarraInferior'
+import { Carregando, ErroBloco } from './componentes/Estados'
+import { api, EVENTO_CONSENTIMENTO, EVENTO_SESSAO_EXPIRADA, mensagemDe, type Perfil } from './lib/api'
+import { ContextoPerfil } from './lib/dados'
+import { sair, useSessao } from './lib/sessao'
+import { Comunidade } from './paginas/Comunidade'
+import { Consentimento } from './paginas/Consentimento'
+import { Entrar } from './paginas/Entrar'
+import { Gerador } from './paginas/Gerador'
+import { GuardaRoupa } from './paginas/GuardaRoupa'
+import { Inicio } from './paginas/Inicio'
+import { Splash } from './paginas/Splash'
 
-import { supabase } from './lib/supabase'
-import Cadastro from './pages/Cadastro'
-import GuardaRoupa from './pages/GuardaRoupa'
-import Login from './pages/Login'
-import Recomendar from './pages/Recomendar'
+// telas menos frequentes saem do pacote inicial
+const CadastrarPeca = lazy(() => import('./paginas/CadastrarPeca'))
+const LookGerado = lazy(() => import('./paginas/LookGerado'))
+const PerfilPagina = lazy(() => import('./paginas/Perfil'))
 
-export default function App() {
-  const [sessao, setSessao] = useState<Session | null>(null)
-  const [carregando, setCarregando] = useState(true)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSessao(data.session)
-      setCarregando(false)
-    })
-    const { data: inscricao } = supabase.auth.onAuthStateChange((_evento, nova) =>
-      setSessao(nova),
+/** Um erro de renderização numa tela não pode deixar o app em branco. */
+class Barreira extends Component<{ children: ReactNode }, { erro: boolean }> {
+  state = { erro: false }
+  static getDerivedStateFromError() {
+    return { erro: true }
+  }
+  render() {
+    if (!this.state.erro) return this.props.children
+    return (
+      <main className="pagina">
+        <ErroBloco
+          mensagem="Esta tela encontrou um problema. Seus dados estão guardados."
+          aoTentar={() => window.location.reload()}
+        />
+      </main>
     )
-    return () => inscricao.subscription.unsubscribe()
+  }
+}
+
+function RolarParaOTopo() {
+  const { pathname } = useLocation()
+  // com chaves: nos navegadores novos scrollTo devolve uma Promise, e um efeito
+  // só pode devolver a função de limpeza
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+  return null
+}
+
+function AreaLogada() {
+  const [perfil, setPerfil] = useState<Perfil | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+
+  const recarregar = useCallback(async () => {
+    try {
+      setPerfil(await api.perfil())
+      setErro(null)
+    } catch (e) {
+      setErro(mensagemDe(e))
+    }
   }, [])
 
-  if (carregando) return <div className="app">Carregando…</div>
-  if (!sessao) return <Login />
+  useEffect(() => {
+    void recarregar()
+    const aoPedirTermo = () => void recarregar()
+    const aoExpirar = () => void sair()
+    window.addEventListener(EVENTO_CONSENTIMENTO, aoPedirTermo)
+    window.addEventListener(EVENTO_SESSAO_EXPIRADA, aoExpirar)
+    return () => {
+      window.removeEventListener(EVENTO_CONSENTIMENTO, aoPedirTermo)
+      window.removeEventListener(EVENTO_SESSAO_EXPIRADA, aoExpirar)
+    }
+  }, [recarregar])
+
+  if (!perfil)
+    return (
+      <main className="pagina pagina--centro">
+        {erro ? <ErroBloco mensagem={erro} aoTentar={recarregar} /> : <Carregando />}
+        {erro && (
+          <button type="button" className="botao botao--texto" onClick={() => void sair()}>
+            Sair
+          </button>
+        )}
+      </main>
+    )
+
+  if (perfil.consentimento.exigido && !perfil.consentimento.aceito)
+    return <Consentimento aoAceitar={recarregar} />
 
   return (
-    <>
-      <main className="app">
+    <ContextoPerfil.Provider value={{ perfil, recarregar }}>
+      <RolarParaOTopo />
+      <Barreira>
+        <Suspense fallback={<main className="pagina pagina--centro"><Carregando /></main>}>
+          <Routes>
+            <Route path="/" element={<Inicio />} />
+            <Route path="/guarda-roupa" element={<GuardaRoupa />} />
+            <Route path="/guarda-roupa/nova" element={<CadastrarPeca />} />
+            <Route path="/gerador" element={<Gerador />} />
+            <Route path="/gerador/look" element={<LookGerado />} />
+            <Route path="/comunidade" element={<Comunidade />} />
+            <Route path="/perfil" element={<PerfilPagina />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </Barreira>
+      <BarraInferior />
+    </ContextoPerfil.Provider>
+  )
+}
+
+export function App() {
+  const { sessao, carregando } = useSessao()
+
+  if (carregando)
+    return (
+      <div className="app">
+        <main className="pagina pagina--centro"><Carregando /></main>
+      </div>
+    )
+
+  return (
+    <div className="app">
+      <Barreira>
+      {sessao ? (
+        <AreaLogada key={sessao.token.slice(-12)} />
+      ) : (
         <Routes>
-          <Route path="/" element={<Recomendar />} />
-          <Route path="/guarda-roupa" element={<GuardaRoupa />} />
-          <Route path="/cadastrar" element={<Cadastro usuarioId={sessao.user.id} />} />
+          <Route path="/" element={<Splash />} />
+          <Route path="/entrar" element={<Entrar modo="entrar" />} />
+          <Route path="/criar-conta" element={<Entrar modo="criar" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </main>
-
-      <nav className="barra-inferior">
-        <NavLink to="/" end className={({ isActive }) => (isActive ? 'ativo' : '')}>
-          Hoje
-        </NavLink>
-        <NavLink to="/cadastrar" className={({ isActive }) => (isActive ? 'ativo' : '')}>
-          Cadastrar
-        </NavLink>
-        <NavLink to="/guarda-roupa" className={({ isActive }) => (isActive ? 'ativo' : '')}>
-          Guarda-roupa
-        </NavLink>
-      </nav>
-    </>
+      )}
+      </Barreira>
+    </div>
   )
 }

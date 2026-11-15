@@ -3,19 +3,22 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // O PWA é o que atende ao RNF06 (instalável no celular) e ao RNF09 (consulta ao
-// guarda-roupa a partir de cache local). O cache de rede cobre justamente a
-// listagem de peças; recomendação e upload continuam exigindo conexão.
+// guarda-roupa a partir de cache local).
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // "prompt", não "autoUpdate": uma atualização automática recarrega a aba
+      // e descarta o formulário de cadastro que o usuário estiver preenchendo.
+      registerType: 'prompt',
+      includeAssets: ['favicon.svg', 'icone-192.png', 'icone-512.png'],
       manifest: {
-        name: 'StyleUp',
-        short_name: 'StyleUp',
+        name: 'Style Up',
+        short_name: 'Style Up',
         description: 'Seu guarda-roupa catalogado por foto, com sugestões de look.',
-        theme_color: '#1c1917',
-        background_color: '#fafaf9',
+        lang: 'pt-BR',
+        theme_color: '#f3f0e7',
+        background_color: '#f3f0e7',
         display: 'standalone',
         start_url: '/',
         icons: [
@@ -25,28 +28,47 @@ export default defineConfig({
         ],
       },
       workbox: {
+        navigateFallbackDenylist: [/^\/demo\//],
         runtimeCaching: [
           {
-            // guarda-roupa disponível offline
-            urlPattern: ({ url }) => url.pathname.startsWith('/pecas'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'guarda-roupa',
-              networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
-            },
-          },
-          {
-            urlPattern: ({ url }) => url.pathname.includes('/storage/v1/object'),
+            // Fotos das peças. A URL assinada do Supabase muda a cada assinatura
+            // (o token vai na query); sem normalizar a chave, o cache nunca
+            // acerta. A chave passa a ser só o caminho do arquivo.
+            urlPattern: ({ url }) =>
+              url.pathname.includes('/storage/v1/object/sign/') ||
+              url.pathname.startsWith('/demo/fotos/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'fotos-pecas',
-              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+              plugins: [
+                {
+                  cacheKeyWillBeUsed: async ({ request }) => {
+                    const url = new URL(request.url)
+                    return url.origin + url.pathname
+                  },
+                },
+              ],
             },
           },
+          {
+            // Catálogos públicos (categorias, cores, inspirações): mudam raramente.
+            urlPattern: ({ url }) =>
+              ['/pecas/taxonomia', '/pecas/cores', '/inspiracoes', '/eventos'].includes(
+                url.pathname,
+              ),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'catalogos' },
+          },
+          // As respostas com dados do usuário NÃO passam pelo service worker: num
+          // aparelho compartilhado, o cache de um usuário apareceria para outro.
+          // O guarda-roupa offline (RNF09) fica no armazenamento por usuário
+          // (src/lib/cache.ts), apagado ao sair.
         ],
       },
     }),
   ],
   server: { port: 5173 },
+  build: { target: 'es2022', sourcemap: false },
 })
