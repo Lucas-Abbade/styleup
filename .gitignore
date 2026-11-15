@@ -40,3 +40,8 @@ frontend/playwright-report/
 
 # TypeScript
 *.tsbuildinfo
+
+# Saídas locais do frontend
+frontend/tsconfig.tsbuildinfo
+frontend/e2e/capturas/
+capturas/

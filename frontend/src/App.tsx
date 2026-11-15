@@ -1,56 +1,63 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { BarraInferior } from './componentes/BarraInferior'
-import { Carregando, ErroBloco } from './componentes/Estados'
-import { api, EVENTO_CONSENTIMENTO, EVENTO_SESSAO_EXPIRADA, mensagemDe, type Perfil } from './lib/api'
+import { useRegisterSW } from 'virtual:pwa-register/react'
+import BarraInferior from './componentes/BarraInferior'
+import { Carregando, Falha } from './componentes/Estados'
+import { api, EVENTO_CONSENTIMENTO, mensagemDe, type Perfil } from './lib/api'
 import { ContextoPerfil } from './lib/dados'
-import { sair, useSessao } from './lib/sessao'
-import { Comunidade } from './paginas/Comunidade'
-import { Consentimento } from './paginas/Consentimento'
-import { Entrar } from './paginas/Entrar'
-import { Gerador } from './paginas/Gerador'
-import { GuardaRoupa } from './paginas/GuardaRoupa'
-import { Inicio } from './paginas/Inicio'
-import { Splash } from './paginas/Splash'
+import { useSessao } from './lib/sessao'
+import Abertura from './paginas/Abertura'
+import Consentimento from './paginas/Consentimento'
+import Entrar from './paginas/Entrar'
+import Inicio from './paginas/Inicio'
 
-// telas menos frequentes saem do pacote inicial
+// As telas fora do primeiro acesso carregam sob demanda: menos código para
+// baixar até a tela inicial aparecer.
+const GuardaRoupa = lazy(() => import('./paginas/GuardaRoupa'))
 const CadastrarPeca = lazy(() => import('./paginas/CadastrarPeca'))
+const Gerador = lazy(() => import('./paginas/Gerador'))
 const LookGerado = lazy(() => import('./paginas/LookGerado'))
-const PerfilPagina = lazy(() => import('./paginas/Perfil'))
+const Comunidade = lazy(() => import('./paginas/Comunidade'))
+const PaginaPerfil = lazy(() => import('./paginas/Perfil'))
 
-/** Um erro de renderização numa tela não pode deixar o app em branco. */
-class Barreira extends Component<{ children: ReactNode }, { erro: boolean }> {
-  state = { erro: false }
+class Protecao extends Component<{ children: ReactNode }, { quebrou: boolean }> {
+  state = { quebrou: false }
   static getDerivedStateFromError() {
-    return { erro: true }
+    return { quebrou: true }
   }
   render() {
-    if (!this.state.erro) return this.props.children
+    if (!this.state.quebrou) return this.props.children
     return (
-      <main className="pagina">
-        <ErroBloco
-          mensagem="Esta tela encontrou um problema. Seus dados estão guardados."
-          aoTentar={() => window.location.reload()}
+      <main className="tela tela--sem-barra">
+        <Falha
+          mensagem="Esta tela encontrou um problema. Seus dados estão a salvo."
+          aoTentar={() => window.location.assign('/')}
         />
       </main>
     )
   }
 }
 
-function RolarParaOTopo() {
-  const { pathname } = useLocation()
-  // com chaves: nos navegadores novos scrollTo devolve uma Promise, e um efeito
-  // só pode devolver a função de limpeza
-  useEffect(() => {
-    window.scrollTo(0, 0)
-  }, [pathname])
-  return null
+function AvisoDeAtualizacao() {
+  const { needRefresh, updateServiceWorker } = useRegisterSW()
+  if (!needRefresh[0]) return null
+  return (
+    <div className="mensagem mensagem--info" role="status" style={{ margin: 12 }}>
+      Há uma versão nova do Style Up.{' '}
+      <button type="button" className="link" style={{ border: 0, background: 'none' }}
+        onClick={() => void updateServiceWorker(true)}>
+        Atualizar agora
+      </button>
+    </div>
+  )
 }
 
 function AreaLogada() {
   const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [pedirTermo, setPedirTermo] = useState(false)
 
+  // devolve uma promessa: quem muda o perfil (nome, localização) espera os dados novos
   const recarregar = useCallback(async () => {
     try {
       setPerfil(await api.perfil())
@@ -59,80 +66,87 @@ function AreaLogada() {
       setErro(mensagemDe(e))
     }
   }, [])
-
   useEffect(() => {
     void recarregar()
-    const aoPedirTermo = () => void recarregar()
-    const aoExpirar = () => void sair()
-    window.addEventListener(EVENTO_CONSENTIMENTO, aoPedirTermo)
-    window.addEventListener(EVENTO_SESSAO_EXPIRADA, aoExpirar)
-    return () => {
-      window.removeEventListener(EVENTO_CONSENTIMENTO, aoPedirTermo)
-      window.removeEventListener(EVENTO_SESSAO_EXPIRADA, aoExpirar)
-    }
   }, [recarregar])
+  const local = useLocation()
 
-  if (!perfil)
+  useEffect(() => {
+    const avisar = () => setPedirTermo(true)
+    window.addEventListener(EVENTO_CONSENTIMENTO, avisar)
+    return () => window.removeEventListener(EVENTO_CONSENTIMENTO, avisar)
+  }, [])
+
+  // corpo com chaves: no Chrome atual scrollTo devolve uma Promise, e o React
+  // trataria esse retorno como função de limpeza
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [local.pathname])
+
+  if (!perfil && !erro) {
+    return <main className="tela tela--sem-barra"><Carregando /></main>
+  }
+  if (!perfil) {
     return (
-      <main className="pagina pagina--centro">
-        {erro ? <ErroBloco mensagem={erro} aoTentar={recarregar} /> : <Carregando />}
-        {erro && (
-          <button type="button" className="botao botao--texto" onClick={() => void sair()}>
-            Sair
-          </button>
-        )}
+      <main className="tela tela--sem-barra">
+        <Falha mensagem={erro ?? 'Não foi possível carregar o seu perfil.'}
+          aoTentar={() => void recarregar()} />
       </main>
     )
+  }
 
-  if (perfil.consentimento.exigido && !perfil.consentimento.aceito)
-    return <Consentimento aoAceitar={recarregar} />
+  const consentimento = perfil.consentimento
+  if ((consentimento.exigido && !consentimento.aceito) || pedirTermo) {
+    return (
+      <Consentimento
+        aoAceitar={() => {
+          setPedirTermo(false)
+          void recarregar()
+        }}
+      />
+    )
+  }
 
   return (
     <ContextoPerfil.Provider value={{ perfil, recarregar }}>
-      <RolarParaOTopo />
-      <Barreira>
-        <Suspense fallback={<main className="pagina pagina--centro"><Carregando /></main>}>
+      <AvisoDeAtualizacao />
+      <Protecao>
+        <Suspense fallback={<main className="tela"><Carregando /></main>}>
           <Routes>
-            <Route path="/" element={<Inicio />} />
+            <Route path="/" element={<Inicio perfil={perfil} />} />
             <Route path="/guarda-roupa" element={<GuardaRoupa />} />
             <Route path="/guarda-roupa/nova" element={<CadastrarPeca />} />
             <Route path="/gerador" element={<Gerador />} />
             <Route path="/gerador/look" element={<LookGerado />} />
             <Route path="/comunidade" element={<Comunidade />} />
-            <Route path="/perfil" element={<PerfilPagina />} />
+            <Route path="/perfil" element={<PaginaPerfil />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
-      </Barreira>
+      </Protecao>
       <BarraInferior />
     </ContextoPerfil.Provider>
   )
 }
 
-export function App() {
+export default function App() {
   const { sessao, carregando } = useSessao()
 
-  if (carregando)
+  if (carregando) {
+    return <div className="app"><main className="tela tela--sem-barra"><Carregando /></main></div>
+  }
+  if (!sessao) {
     return (
       <div className="app">
-        <main className="pagina pagina--centro"><Carregando /></main>
-      </div>
-    )
-
-  return (
-    <div className="app">
-      <Barreira>
-      {sessao ? (
-        <AreaLogada key={sessao.token.slice(-12)} />
-      ) : (
         <Routes>
-          <Route path="/" element={<Splash />} />
+          <Route path="/" element={<Abertura />} />
           <Route path="/entrar" element={<Entrar modo="entrar" />} />
           <Route path="/criar-conta" element={<Entrar modo="criar" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      )}
-      </Barreira>
-    </div>
-  )
+      </div>
+    )
+  }
+  // a chave força recarregar perfil e telas quando troca o usuário
+  return <div className="app" key={sessao.email ?? 'sessao'}><AreaLogada /></div>
 }

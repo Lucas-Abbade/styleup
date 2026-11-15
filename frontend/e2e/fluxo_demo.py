@@ -75,9 +75,11 @@ with sync_playwright() as p:
     foto(pagina, "01-splash")
     auditar(pagina, "splash")
     pagina.get_by_role("link", name="Começar").click()
-    pagina.get_by_label("Nome").fill("Pedro")
-    pagina.get_by_label("E-mail").fill(f"pedro{id(pagina) % 100000}@exemplo.dev")
-    pagina.get_by_label("Senha").fill("segredo123")
+    pagina.get_by_label("Como quer ser chamado").fill("Pedro")
+    # no modo demonstração não há e-mail nem senha
+    if pagina.get_by_label("E-mail").count():
+        pagina.get_by_label("E-mail").fill(f"pedro{id(pagina) % 100000}@exemplo.dev")
+        pagina.get_by_label("Senha").fill("segredo123")
     foto(pagina, "02-criar-conta")
     auditar(pagina, "criar conta")
     pagina.get_by_role("button", name="Criar conta").click()
@@ -105,21 +107,22 @@ with sync_playwright() as p:
     foto(pagina, "05-guarda-roupa")
     auditar(pagina, "guarda-roupa")
     foto(pagina, "05-guarda-roupa-inteira", inteira=True)
-    pagina.get_by_role("tab", name="Calças").click()
+    pagina.get_by_role("button", name="Calças", exact=True).click()
     expect(pagina.locator(".cartao-peca")).to_have_count(5)
-    pagina.get_by_role("tab", name="Todas").click()
-    pagina.get_by_role("button", name="Opções de Camiseta preto").click()
-    expect(pagina.get_by_role("dialog")).to_be_visible()
-    pagina.get_by_role("dialog").get_by_label("Cor", exact=True).select_option("vinho")
+    pagina.get_by_role("button", name="Todas", exact=True).click()
+    pagina.get_by_role("button", name="Camiseta, preto. Abrir detalhes").click()
+    dialogo = pagina.get_by_role("dialog")
+    expect(dialogo).to_be_visible()
     foto(pagina, "06-editar-peca")
     auditar(pagina, "editar peça")
-    pagina.get_by_role("button", name="Salvar alterações").click()
-    expect(pagina.get_by_text("Peça atualizada")).to_be_visible()
+    dialogo.get_by_role("button", name="Vinho", exact=True).click()   # grava na hora
+    expect(pagina.get_by_text("Cor atualizada")).to_be_visible()
+    dialogo.get_by_role("button", name="Fechar").click()
     expect(pagina.locator(".cartao-peca", has_text="Camiseta").filter(has_text="Vinho")).to_have_count(1)
 
     # 5. cadastro: sem foto e com foto (o servidor de teste não tem os modelos de
     #    visão; a tela deve cair para o preenchimento manual, sem perder a foto)
-    pagina.get_by_role("link", name="Cadastrar peça").click()
+    pagina.get_by_role("link", name="Adicionar peça").click()
     foto(pagina, "07-nova-peca")
     auditar(pagina, "nova peça")
     pagina.get_by_role("button", name="Cadastrar sem foto").click()
@@ -130,7 +133,7 @@ with sync_playwright() as p:
     pagina.get_by_role("button", name="Salvar no guarda-roupa").click()
     expect(pagina.locator(".cartao-peca")).to_have_count(25)
 
-    pagina.get_by_role("link", name="Cadastrar peça").click()
+    pagina.get_by_role("link", name="Adicionar peça").click()
     pagina.locator("input[type=file]:not([capture])").set_input_files(
         {"name": "peca.png", "mimeType": "image/png", "buffer": png_de_teste()})
     visao = pagina.request.get("http://localhost:8000/saude").json()["visao"]["situacao"]
@@ -182,8 +185,8 @@ with sync_playwright() as p:
 
     # 8. looks salvos no guarda-roupa
     pagina.get_by_role("link", name="Guarda-Roupa").first.click()
-    pagina.get_by_role("tab", name="Looks salvos").click()
-    expect(pagina.locator(".cartao-peca--look")).to_have_count(1)
+    pagina.get_by_role("button", name="Looks salvos").click()
+    expect(pagina.locator(".look-mini")).to_have_count(1)
     foto(pagina, "12-looks-salvos")
 
     # 9. comunidade e perfil

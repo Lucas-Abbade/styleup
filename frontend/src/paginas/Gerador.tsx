@@ -109,3 +109,5 @@ export function Gerador() {
     </main>
   )
 }
+
+export default Gerador

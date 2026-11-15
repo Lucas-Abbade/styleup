@@ -1,78 +1,83 @@
-/** Envio e leitura das fotos das peças (Storage do Supabase ou modo demonstração). */
+// Fotos das peças: envio e endereços de exibição.
+//
+// No modo real, o navegador fala direto com o Storage do Supabase (bucket
+// privado; a política do bucket só deixa o usuário mexer na própria pasta). No
+// modo demonstração, o backend guarda as fotos em memória.
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { API_URL, BUCKET, MODO_DEMO } from './config'
-import { usuarioIdAtual } from './sessao'
-import { supabase } from './supabase'
+import { API_URL, MODO_DEMO } from './config'
+import { BUCKET, supabase } from './supabase'
 
 const VALIDADE_S = 60 * 60
-const urls = new Map<string, { url: string; expira: number }>()
+const assinadas = new Map<string, { url: string; expira: number }>()
 
-/** Envia o recorte da peça e devolve o caminho para gravar em `imagem_path`. */
-export async function enviarFoto(foto: Blob): Promise<string> {
-  if (MODO_DEMO) return (await api.enviarFotoDemo(foto)).caminho
-  const uid = usuarioIdAtual()
-  if (!uid) throw new Error('Sessão expirada. Entre novamente.')
-  const extensao = foto.type === 'image/webp' ? 'webp' : 'jpg'
-  const caminho = `${uid}/${crypto.randomUUID()}.${extensao}`
-  const { error } = await supabase!.storage.from(BUCKET).upload(caminho, foto, {
-    contentType: foto.type || 'image/jpeg',
-    cacheControl: '31536000',
-    upsert: false,
-  })
+/** Envia o recorte da peça e devolve o caminho a gravar em `imagem_path`. */
+export async function enviarFoto(arquivo: Blob): Promise<string> {
+  if (MODO_DEMO || !supabase) return (await api.enviarFotoDemo(arquivo)).caminho
+  const { data } = await supabase.auth.getUser()
+  if (!data.user) throw new Error('Sessão expirada. Entre novamente.')
+  const extensao = arquivo.type === 'image/webp' ? 'webp' : 'jpg'
+  const caminho = `${data.user.id}/${crypto.randomUUID()}.${extensao}`
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(caminho, arquivo, { contentType: arquivo.type, upsert: false })
   if (error) throw new Error('Não foi possível enviar a foto. Tente de novo.')
   return caminho
 }
 
+/** Apaga uma foto enviada cuja peça acabou não sendo registrada. */
+export async function descartarFoto(caminho: string): Promise<void> {
+  if (MODO_DEMO || !supabase) return
+  await supabase.storage.from(BUCKET).remove([caminho])
+}
+
 /**
- * URLs de exibição para vários caminhos de uma vez. No Supabase é UMA chamada
- * (`createSignedUrls`), não uma por peça como antes; o resultado fica em memória
- * até perto de expirar.
+ * Endereços de exibição para vários caminhos de uma vez.
+ * Uma chamada só (`createSignedUrls`) em vez de uma por peça — com 40 peças no
+ * guarda-roupa, eram 40 idas ao Supabase para abrir a tela.
  */
 export async function urlsDasFotos(caminhos: string[]): Promise<Record<string, string>> {
-  const agora = Date.now()
   const saida: Record<string, string> = {}
-  const faltando: string[] = []
-  for (const caminho of new Set(caminhos)) {
-    const guardada = urls.get(caminho)
-    if (guardada && guardada.expira > agora) saida[caminho] = guardada.url
-    else faltando.push(caminho)
-  }
-  if (!faltando.length) return saida
-
-  if (MODO_DEMO) {
-    for (const caminho of faltando) {
-      const url = `${API_URL}/demo/fotos/${caminho}`
-      urls.set(caminho, { url, expira: Infinity })
-      saida[caminho] = url
-    }
+  const unicos = [...new Set(caminhos.filter(Boolean))]
+  if (MODO_DEMO || !supabase) {
+    unicos.forEach((c) => (saida[c] = `${API_URL}/demo/fotos/${c}`))
     return saida
   }
-  const { data } = await supabase!.storage.from(BUCKET).createSignedUrls(faltando, VALIDADE_S)
-  for (const item of data ?? []) {
-    if (item.signedUrl && item.path) {
-      urls.set(item.path, { url: item.signedUrl, expira: agora + (VALIDADE_S - 300) * 1000 })
-      saida[item.path] = item.signedUrl
+  const agora = Date.now()
+  const faltam = unicos.filter((c) => {
+    const guardada = assinadas.get(c)
+    if (guardada && guardada.expira > agora) {
+      saida[c] = guardada.url
+      return false
     }
+    return true
+  })
+  if (faltam.length) {
+    const { data } = await supabase.storage.from(BUCKET).createSignedUrls(faltam, VALIDADE_S)
+    data?.forEach((item) => {
+      if (item.path && item.signedUrl) {
+        saida[item.path] = item.signedUrl
+        // renova 10 min antes de vencer, para a imagem não quebrar na tela aberta
+        assinadas.set(item.path, { url: item.signedUrl, expira: agora + (VALIDADE_S - 600) * 1000 })
+      }
+    })
   }
   return saida
 }
 
-/** Hook: mapa caminho → URL para as fotos de uma lista de peças. */
 export function useFotos(caminhos: (string | null | undefined)[]): Record<string, string> {
-  const validos = caminhos.filter((c): c is string => !!c)
-  const chave = validos.join('|')
-  const [mapa, setMapa] = useState<Record<string, string>>({})
+  const chave = caminhos.filter(Boolean).join('|')
+  const [urls, setUrls] = useState<Record<string, string>>({})
   useEffect(() => {
-    let vivo = true
-    if (validos.length)
-      urlsDasFotos(validos)
-        .then((m) => vivo && setMapa(m))
-        .catch(() => undefined)
+    let ativo = true
+    const lista = chave ? chave.split('|') : []
+    if (!lista.length) return
+    urlsDasFotos(lista)
+      .then((novas) => ativo && setUrls((antes) => ({ ...antes, ...novas })))
+      .catch(() => undefined) // sem URL, a tela mostra a silhueta da peça
     return () => {
-      vivo = false
+      ativo = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave])
-  return mapa
+  return urls
 }

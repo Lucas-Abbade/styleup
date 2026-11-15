@@ -9,10 +9,10 @@ interface Props {
 }
 
 /**
- * Folha que sobe da base da tela. Usa `<dialog>` nativo: o navegador cuida de
- * prender o foco, fechar com Esc e tornar o resto da página inerte.
+ * Folha que sobe da base da tela. Usa <dialog>: o navegador cuida do foco
+ * preso dentro dela, do Esc para fechar e de deixar o resto da página inerte.
  */
-export function Folha({ aberta, titulo, aoFechar, children }: Props) {
+export default function Folha({ aberta, titulo, aoFechar, children }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export function Folha({ aberta, titulo, aoFechar, children }: Props) {
           <header className="folha__topo">
             <h2>{titulo}</h2>
             <button type="button" className="botao-icone" onClick={aoFechar} aria-label="Fechar">
-              <X size={22} aria-hidden="true" />
+              <X aria-hidden size={22} />
             </button>
           </header>
           {children}
@@ -44,3 +44,5 @@ export function Folha({ aberta, titulo, aoFechar, children }: Props) {
     </dialog>
   )
 }
+
+export { Folha }

@@ -1,6 +1,6 @@
-/** Cliente da API do StyleUp. Toda chamada leva o JWT do usuário. */
+// Cliente da API do StyleUp. Toda chamada leva o JWT da sessão atual.
 import { API_URL } from './config'
-import { tokenAtual } from './sessao'
+import { sair, tokenAtual } from './sessao'
 
 export type Papel = 'superior' | 'inferior' | 'calcado' | 'sobreposicao' | 'acessorio'
 
@@ -10,11 +10,11 @@ export interface Peca {
   papel: Papel
   categoria: string
   rotulo: string
-  formalidade: number
   cor_nome: string
   cor_hex: string
   cor_hsv: number[]
   neutra: boolean
+  formalidade: number
   disponivel: boolean
   imagem_path: string | null
   atributos: Record<string, string>
@@ -75,7 +75,6 @@ export interface Look {
   explicacao: string
   salvo: boolean
   aprovado: boolean | null
-  criado_em?: string | null
   pecas: PecaDoLook[]
 }
 
@@ -102,9 +101,9 @@ export interface Pedido {
   texto?: string
   estilo?: string
   inspiracao?: string
+  temperatura?: number
   latitude?: number
   longitude?: number
-  temperatura?: number
 }
 
 export interface Inspiracao {
@@ -159,84 +158,100 @@ export class ErroApi extends Error {
   }
 }
 
-/** Disparado quando a API pede o aceite do termo; o App leva à tela certa. */
+/** Aviso global: o backend disse que falta aceitar o termo. */
 export const EVENTO_CONSENTIMENTO = 'styleup:consentimento'
-export const EVENTO_SESSAO_EXPIRADA = 'styleup:sessao-expirada'
 
 async function requisitar<T>(caminho: string, opcoes: RequestInit = {}): Promise<T> {
   const token = await tokenAtual()
-  let resposta: Response
-  try {
-    resposta = await fetch(`${API_URL}${caminho}`, {
-      ...opcoes,
-      headers: {
-        ...(opcoes.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...opcoes.headers,
-      },
-    })
-  } catch {
-    throw new ErroApi(0, 'sem_conexao', 'Sem conexão com o servidor. Verifique a internet e tente de novo.')
+  const cabecalhos: Record<string, string> = { ...(opcoes.headers as Record<string, string>) }
+  if (token) cabecalhos.Authorization = `Bearer ${token}`
+  if (opcoes.body && !(opcoes.body instanceof FormData)) {
+    cabecalhos['Content-Type'] = 'application/json'
   }
 
-  if (!resposta.ok) {
-    const corpo = await resposta.json().catch(() => ({}))
-    const erro = new ErroApi(
-      resposta.status,
-      corpo.codigo ?? 'erro',
-      corpo.erro ?? corpo.detail ?? 'Algo deu errado. Tente de novo.',
-      corpo,
-    )
-    if (erro.codigo === 'consentimento_pendente') window.dispatchEvent(new Event(EVENTO_CONSENTIMENTO))
-    if (erro.codigo === 'sessao_expirada' || erro.codigo === 'token_invalido')
-      window.dispatchEvent(new Event(EVENTO_SESSAO_EXPIRADA))
-    throw erro
+  let resposta: Response
+  try {
+    resposta = await fetch(`${API_URL}${caminho}`, { ...opcoes, headers: cabecalhos })
+  } catch {
+    throw new ErroApi(0, 'sem_conexao',
+      'Não foi possível falar com o servidor. Verifique a internet e tente de novo.')
   }
-  return resposta.status === 204 ? (undefined as T) : resposta.json()
+
+  if (resposta.ok) {
+    return resposta.status === 204 ? (undefined as T) : ((await resposta.json()) as T)
+  }
+
+  const corpo = (await resposta.json().catch(() => ({}))) as Record<string, unknown>
+  const codigo = (corpo.codigo as string) ?? 'erro'
+  const mensagem =
+    (corpo.erro as string) ?? (corpo.detail as string) ?? `Erro ${resposta.status}. Tente de novo.`
+  if (codigo === 'consentimento_pendente') {
+    window.dispatchEvent(new Event(EVENTO_CONSENTIMENTO))
+  }
+  if (resposta.status === 401 && (codigo === 'sessao_expirada' || codigo === 'token_invalido')) {
+    void sair()
+  }
+  throw new ErroApi(resposta.status, codigo, mensagem, corpo)
 }
 
 const json = (corpo: unknown) => JSON.stringify(corpo)
 
 export const api = {
+  // catálogos
   taxonomia: () => requisitar<Categoria[]>('/pecas/taxonomia'),
   cores: () => requisitar<Cor[]>('/pecas/cores'),
   inspiracoes: () => requisitar<Inspiracao[]>('/inspiracoes'),
 
-  analisar(foto: Blob) {
-    const corpo = new FormData()
-    corpo.append('foto', foto, 'foto.jpg')
-    return requisitar<Analise>('/pecas/analisar', { method: 'POST', body: corpo })
+  // guarda-roupa
+  listarPecas: () => requisitar<Peca[]>('/pecas'),
+  analisar(arquivo: Blob) {
+    const form = new FormData()
+    form.append('foto', arquivo, 'foto.jpg')
+    return requisitar<Analise>('/pecas/analisar', { method: 'POST', body: form })
   },
   registrarPeca: (peca: Record<string, unknown>) =>
     requisitar<Peca>('/pecas', { method: 'POST', body: json(peca) }),
-  listarPecas: () => requisitar<Peca[]>('/pecas'),
-  atualizarPeca: (id: string, mudancas: Partial<Peca>) =>
+  atualizarPeca: (id: string, mudancas: Record<string, unknown>) =>
     requisitar<Peca>(`/pecas/${id}`, { method: 'PATCH', body: json(mudancas) }),
   removerPeca: (id: string) => requisitar<void>(`/pecas/${id}`, { method: 'DELETE' }),
 
+  // looks
   recomendar: (pedido: Pedido) =>
     requisitar<Recomendacao>('/recomendacoes', { method: 'POST', body: json(pedido) }),
-  feedback: (look_id: string, aprovado: boolean) =>
-    requisitar<{ registrado: boolean }>('/feedback', { method: 'POST', body: json({ look_id, aprovado }) }),
-  salvarLook: (id: string, salvo: boolean) =>
-    requisitar<{ salvo: boolean }>(`/looks/${id}/salvo`, { method: 'PUT', body: json({ salvo }) }),
-  looksSalvos: () => requisitar<Look[]>('/looks?salvos=true&limite=50'),
+  feedback: (lookId: string, aprovado: boolean) =>
+    requisitar<{ registrado: boolean }>('/feedback', {
+      method: 'POST',
+      body: json({ look_id: lookId, aprovado }),
+    }),
+  salvarLook: (lookId: string, salvo: boolean) =>
+    requisitar<{ salvo: boolean }>(`/looks/${lookId}/salvo`, {
+      method: 'PUT',
+      body: json({ salvo }),
+    }),
+  looksSalvos: () => requisitar<Look[]>('/looks?salvos=true'),
   metricas: () => requisitar<Metricas>('/metricas'),
 
+  // perfil e privacidade
   perfil: () => requisitar<Perfil>('/perfil'),
-  atualizarNome: (nome: string) => requisitar<Perfil>('/perfil', { method: 'PUT', body: json({ nome }) }),
+  atualizarNome: (nome: string) =>
+    requisitar<Perfil>('/perfil', { method: 'PUT', body: json({ nome }) }),
   termo: () => requisitar<Termo>('/perfil/termo'),
   aceitarTermo: (versao: string, localizacao: boolean) =>
-    requisitar<Consentimento>('/perfil/consentimento', { method: 'POST', body: json({ versao, localizacao }) }),
-  revogarTermo: () => requisitar<Consentimento>('/perfil/consentimento', { method: 'DELETE' }),
+    requisitar<Consentimento>('/perfil/consentimento', {
+      method: 'POST',
+      body: json({ versao, localizacao }),
+    }),
+  revogarTermo: () =>
+    requisitar<Consentimento>('/perfil/consentimento', { method: 'DELETE' }),
   exportarDados: () => requisitar<Record<string, unknown>>('/perfil/exportar'),
   excluirConta: (confirmacao: string) =>
     requisitar<{ excluida: boolean }>('/perfil', { method: 'DELETE', body: json({ confirmacao }) }),
 
-  enviarFotoDemo(foto: Blob) {
-    const corpo = new FormData()
-    corpo.append('foto', foto, 'peca.webp')
-    return requisitar<{ caminho: string }>('/demo/fotos', { method: 'POST', body: corpo })
+  // só no modo demonstração: o backend faz o papel do Storage
+  enviarFotoDemo(arquivo: Blob) {
+    const form = new FormData()
+    form.append('foto', arquivo, 'peca.webp')
+    return requisitar<{ caminho: string }>('/demo/fotos', { method: 'POST', body: form })
   },
 }
 

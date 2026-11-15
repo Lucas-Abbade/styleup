@@ -1,16 +1,18 @@
-/** Preparo da foto no aparelho, antes de enviar para análise. */
+// Preparo da foto no aparelho, antes de enviar.
 
-const LADO_MAXIMO = 1280 // o servidor reduz para 1024; mais que isso é só tráfego
-const QUALIDADE = 0.85
+const LADO_MAXIMO = 1280
 
 /**
- * Reduz e recomprime a foto. Uma foto de 12 MP (4–8 MB) vira ~250 KB, o que
- * corta segundos de envio em rede móvel. `createImageBitmap` já aplica a
- * orientação do EXIF e redimensiona na decodificação, sem estourar o limite de
- * área de canvas do Safari do iOS.
+ * Reduz a foto para no máximo 1280 px e converte para JPEG.
+ *
+ * A câmera de um celular entrega 12 a 48 megapixels; o modelo de classificação
+ * trabalha em 224 px. Enviar o original só gasta dados do usuário e tempo de
+ * upload — que entra na conta dos 5 segundos da catalogação. De quebra, o
+ * formato HEIC do iPhone vira JPEG, que o servidor sabe abrir.
  */
 export async function prepararFoto(arquivo: Blob): Promise<Blob> {
   try {
+    // `createImageBitmap` já aplica a rotação do EXIF por padrão
     const original = await createImageBitmap(arquivo)
     const escala = Math.min(1, LADO_MAXIMO / Math.max(original.width, original.height))
     const largura = Math.round(original.width * escala)
@@ -18,15 +20,28 @@ export async function prepararFoto(arquivo: Blob): Promise<Blob> {
     const tela = document.createElement('canvas')
     tela.width = largura
     tela.height = altura
-    tela.getContext('2d')!.drawImage(original, 0, 0, largura, altura)
+    const contexto = tela.getContext('2d')
+    if (!contexto) return arquivo
+    contexto.fillStyle = '#ffffff'
+    contexto.fillRect(0, 0, largura, altura)
+    contexto.drawImage(original, 0, 0, largura, altura)
     original.close()
-    const blob = await new Promise<Blob | null>((ok) => tela.toBlob(ok, 'image/jpeg', QUALIDADE))
-    return blob && blob.size < arquivo.size ? blob : arquivo
+    const reduzida = await new Promise<Blob | null>((ok) => tela.toBlob(ok, 'image/jpeg', 0.85))
+    return reduzida ?? arquivo
   } catch {
-    return arquivo // formato que o navegador não decodifica: o servidor decide
+    return arquivo // formato que o navegador não abre: o servidor decide
   }
 }
 
 export async function dataUrlParaBlob(dataUrl: string): Promise<Blob> {
   return (await fetch(dataUrl)).blob()
+}
+
+export function baixar(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = nome
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

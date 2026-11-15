@@ -1,23 +1,28 @@
-import { CircleUserRound, House, Shirt, Sparkles, UsersRound } from 'lucide-react'
+import { CircleUser, House, Shirt, Sparkles, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
 const ABAS = [
-  { para: '/', rotulo: 'Início', Icone: House, fim: true },
+  { para: '/', rotulo: 'Início', Icone: House, exato: true },
   { para: '/guarda-roupa', rotulo: 'Guarda-Roupa', Icone: Shirt },
   { para: '/gerador', rotulo: 'Gerador', Icone: Sparkles },
-  { para: '/comunidade', rotulo: 'Comunidade', Icone: UsersRound },
-  { para: '/perfil', rotulo: 'Perfil', Icone: CircleUserRound },
+  { para: '/comunidade', rotulo: 'Comunidade', Icone: Users },
+  { para: '/perfil', rotulo: 'Perfil', Icone: CircleUser },
 ]
 
-/** Navegação principal: cinco destinos, sempre visíveis, com rótulo. */
-export function BarraInferior() {
+export default function BarraInferior() {
   return (
     <nav className="barra-inferior" aria-label="Navegação principal">
-      {ABAS.map(({ para, rotulo, Icone, fim }) => (
-        <NavLink key={para} to={para} end={fim} className="barra-inferior__aba">
+      {ABAS.map(({ para, rotulo, Icone, exato }) => (
+        <NavLink key={para} to={para} end={exato} className="barra-inferior__aba">
           {({ isActive }) => (
             <>
-              <Icone size={24} strokeWidth={isActive ? 2.4 : 1.7} aria-hidden="true" />
+              <Icone
+                aria-hidden
+                size={24}
+                strokeWidth={isActive ? 2.4 : 1.8}
+                fill={isActive ? 'currentColor' : 'none'}
+                fillOpacity={isActive ? 0.18 : 0}
+              />
               <span>{rotulo}</span>
             </>
           )}

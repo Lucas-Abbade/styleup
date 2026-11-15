@@ -105,7 +105,9 @@ class RepositorioMemoria:
                                                "criado_em": _agora()}
             if semear and self.uid not in self.dados.semeados:
                 self.dados.semeados.add(self.uid)
-                for categoria, cor, atributos in _SEMENTE:
+                # invertido: a lista mostra o mais recente primeiro, e as roupas
+                # devem abrir o guarda-roupa antes dos acessórios
+                for categoria, cor, atributos in reversed(_SEMENTE):
                     self.criar_peca(peca_de_exemplo(categoria, cor, atributos))
 
     # ------------------------------------------------------------- peças

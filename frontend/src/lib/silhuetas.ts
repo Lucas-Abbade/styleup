@@ -1,138 +1,123 @@
-/**
- * Silhuetas das peças, desenhadas em SVG e tingidas com a cor da peça.
- *
- * Aparecem quando a peça não tem foto (cadastro manual, modo demonstração, foto
- * que não carregou) e na exportação do look como imagem. Como é só uma string
- * de SVG, a mesma função serve ao `<img>` da tela e ao canvas da exportação.
- */
-import type { Papel } from './api'
+// Silhuetas das peças, desenhadas em SVG e tingidas com a cor da peça.
+//
+// Aparecem quando a peça não tem foto (cadastro manual, modo demonstração) e
+// quando a foto não carrega. São geradas como texto SVG para servirem tanto a
+// um <img> na tela quanto ao canvas que exporta o look como imagem.
 
-/** c = corpo (cor da peça) · s = sombra · l = luz · t = traço · b = borracha clara (sola) */
-type Parte = ['c' | 's' | 'l' | 't' | 'b', string]
+type Forma = { d: string; tipo?: 'corpo' | 'sombra' | 'luz' | 'traco' }
 
+const MANGA_CURTA =
+  'M42 18 24 26 8 46l14 12 10-10v56h56V48l10 10 14-12-16-20-18-8c-4 10-32 10-36 0Z'
 const MANGA_LONGA =
-  'M42 16 L22 24 L7 92 L23 97 L34 54 L34 106 L86 106 L86 54 L97 97 L113 92 L98 24 L78 16 C72 26 48 26 42 16 Z'
+  'M42 16 22 24 8 92l16 4 10-44v54h52V52l10 44 16-4-14-68-20-8c-4 10-32 10-36 0Z'
+const CALCA = 'M34 10h52l8 100H68L60 40l-8 70H26Z'
 
-const FORMAS: Record<string, Parte[]> = {
+const FORMAS: Record<string, Forma[]> = {
   camiseta: [
-    ['c', 'M42 18 L24 26 L7 47 L22 60 L33 49 L33 104 L87 104 L87 49 L98 60 L113 47 L96 26 L78 18 C73 29 47 29 42 18 Z'],
-    ['s', 'M42 18 C47 29 73 29 78 18 L74 17 C70 25 50 25 46 17 Z'],
+    { d: MANGA_CURTA },
+    { d: 'M42 18c4 10 32 10 36 0', tipo: 'traco' },
   ],
   regata: [
-    ['c', 'M45 14 L37 14 C37 34 29 40 27 47 L27 106 L93 106 L93 47 C91 40 83 34 83 14 L75 14 C73 31 47 31 45 14 Z'],
-    ['s', 'M45 14 C47 31 73 31 75 14 L72 14 C70 27 50 27 48 14 Z'],
+    { d: 'M44 14h-8c0 20-8 26-10 32v60h68V46c-2-6-10-12-10-32h-8c-2 16-30 16-32 0Z' },
+    { d: 'M44 14c2 16 30 16 32 0', tipo: 'traco' },
   ],
   polo: [
-    ['c', 'M42 18 L24 26 L7 47 L22 60 L33 49 L33 104 L87 104 L87 49 L98 60 L113 47 L96 26 L78 18 L60 30 Z'],
-    ['s', 'M42 18 L50 12 L60 24 L70 12 L78 18 L62 36 L60 30 L58 36 Z'],
-    ['t', 'M60 30 L60 56'],
+    { d: MANGA_CURTA },
+    { d: 'M42 18 60 34 78 18l-8-4-10 10-10-10Z', tipo: 'sombra' },
+    { d: 'M60 34v22', tipo: 'traco' },
   ],
   camisa: [
-    ['c', MANGA_LONGA],
-    ['s', 'M42 16 L50 10 L60 22 L70 10 L78 16 L63 34 L60 28 L57 34 Z'],
-    ['t', 'M60 28 L60 106 M56 48 h.1 M56 64 h.1 M56 80 h.1 M56 96 h.1'],
-    ['s', 'M7 92 L23 97 L22 101 L6 96 Z M113 92 L97 97 L98 101 L114 96 Z'],
+    { d: MANGA_LONGA },
+    { d: 'M42 16 60 32 78 16l-8-4-10 10-10-10Z', tipo: 'sombra' },
+    { d: 'M60 32v74M60 46h.1M60 60h.1M60 74h.1M60 88h.1', tipo: 'traco' },
   ],
   moletom: [
-    ['c', 'M40 24 L20 32 L6 94 L22 99 L32 58 L32 106 L88 106 L88 58 L98 99 L114 94 L100 32 L80 24 C80 6 40 6 40 24 Z'],
-    ['s', 'M45 25 C48 13 72 13 75 25 C69 37 51 37 45 25 Z'],
-    ['s', 'M44 80 L76 80 L81 99 L39 99 Z'],
-    ['s', 'M32 100 L88 100 L88 106 L32 106 Z'],
-    ['t', 'M55 34 L54 50 M65 34 L66 50'],
+    { d: 'M40 22 20 32 6 94l16 4 10-40v48h56V58l10 40 16-4-14-62-20-10C78 8 42 8 40 22Z' },
+    { d: 'M46 24c4-10 24-10 28 0-6 10-22 10-28 0Z', tipo: 'sombra' },
+    { d: 'M44 80h32l4 18H40Z', tipo: 'sombra' },
+    { d: 'M54 32v14M66 32v14', tipo: 'traco' },
   ],
   sueter: [
-    ['c', 'M42 18 L22 26 L7 92 L23 97 L34 54 L34 106 L86 106 L86 54 L97 97 L113 92 L98 26 L78 18 C73 28 47 28 42 18 Z'],
-    ['s', 'M42 18 C47 28 73 28 78 18 L75 16 C70 24 50 24 45 16 Z'],
-    ['s', 'M34 98 L86 98 L86 106 L34 106 Z M7 92 L23 97 L21 103 L5 98 Z M113 92 L97 97 L99 103 L115 98 Z'],
+    { d: MANGA_LONGA },
+    { d: 'M42 16c4 12 32 12 36 0l-6-2c-4 8-20 8-24 0Z', tipo: 'sombra' },
+    { d: 'M34 98h52', tipo: 'traco' },
   ],
   bermuda: [
-    ['c', 'M30 22 L90 22 L99 96 L66 96 L60 52 L54 96 L21 96 Z'],
-    ['s', 'M30 22 L90 22 L91 31 L29 31 Z'],
-    ['t', 'M60 31 L60 52 M36 38 C38 46 36 50 32 52 M84 38 C82 46 84 50 88 52'],
+    { d: 'M30 20h60l8 76H66L60 50l-6 46H22Z' },
+    { d: 'M30 20h60l1 10H29Z', tipo: 'sombra' },
+    { d: 'M60 30v20', tipo: 'traco' },
   ],
   calca: [
-    ['c', 'M34 10 L86 10 L95 110 L69 110 L60 42 L51 110 L25 110 Z'],
-    ['s', 'M34 10 L86 10 L87 19 L33 19 Z'],
-    ['t', 'M60 19 L60 42 M39 24 C41 31 39 35 35 37 M81 24 C79 31 81 35 85 37'],
+    { d: CALCA },
+    { d: 'M34 10h52l1 10H33Z', tipo: 'sombra' },
+    { d: 'M60 20v20', tipo: 'traco' },
   ],
   tenis: [
-    ['c', 'M10 86 C10 70 22 66 31 53 L47 49 C55 62 71 68 93 71 C105 73 111 79 111 89 L111 92 L10 92 Z'],
-    ['b', 'M8 92 L112 92 L112 100 C112 103 110 105 107 105 L13 105 C10 105 8 103 8 100 Z'],
-    ['s', 'M10 86 C10 76 16 72 22 66 L28 78 C24 84 22 88 22 92 L10 92 Z'],
-    ['t', 'M44 60 L56 54 M51 66 L63 60 M58 71 L70 66'],
+    { d: 'M10 84c0-14 12-18 20-30l16-4c8 12 24 18 46 20 12 2 18 8 18 18v4H10Z' },
+    { d: 'M8 92h104v8c0 2-2 4-4 4H12c-2 0-4-2-4-4Z', tipo: 'luz' },
+    { d: 'M40 56l10 12M48 53l10 13M57 60l8 10', tipo: 'traco' },
   ],
   sapato: [
-    ['c', 'M10 84 C10 72 24 70 34 59 L49 57 C59 68 79 72 97 75 C107 77 112 82 112 90 L10 90 Z'],
-    ['s', 'M8 90 L112 90 L112 97 L62 97 L58 94 L8 94 Z'],
-    ['t', 'M40 64 C52 66 58 72 62 78'],
+    { d: 'M10 86c0-12 14-14 24-24l14-2c10 10 30 14 48 16 10 2 16 8 16 16H10Z' },
+    { d: 'M8 92h104v6H60l-4-3H8Z', tipo: 'sombra' },
+    { d: 'M46 62c4 8 12 12 22 14', tipo: 'traco' },
   ],
   bota: [
-    ['c', 'M30 16 L62 16 L62 60 C70 70 96 72 104 82 C108 88 108 93 108 96 L28 96 Z'],
-    ['s', 'M26 96 L110 96 L110 104 L66 104 L62 100 L26 100 Z'],
-    ['s', 'M30 16 L62 16 L62 24 L30 24 Z'],
-    ['t', 'M62 60 C56 64 50 64 46 60'],
+    { d: 'M30 16h32v44c8 10 34 12 42 22 4 6 4 12 4 14H28Z' },
+    { d: 'M26 96h84v8H26Z', tipo: 'sombra' },
+    { d: 'M30 28h32M62 60c-10 2-22 2-32 0', tipo: 'traco' },
   ],
   chinelo: [
-    ['c', 'M40 14 C57 8 77 20 79 45 C81 66 74 97 62 107 C50 113 38 104 36 84 C34 60 30 24 40 14 Z'],
-    ['t', 'M41 52 C50 36 60 34 60 22 M60 22 C62 36 70 40 76 54'],
+    { d: 'M40 14c16-6 36 6 38 30 2 20-4 52-16 62-12 6-24-2-26-22-2-24-6-60 4-70Z' },
+    { d: 'M42 52c10-14 20-14 30 2M56 42v-14', tipo: 'traco' },
   ],
   jaqueta: [
-    ['c', MANGA_LONGA],
-    ['s', 'M42 16 L50 9 L60 24 L70 9 L78 16 L64 36 L60 30 L56 36 Z'],
-    ['s', 'M34 98 L86 98 L86 106 L34 106 Z'],
-    ['t', 'M60 30 L60 98 M40 62 L52 62 M68 62 L80 62'],
+    { d: MANGA_LONGA },
+    { d: 'M42 16 54 34 60 26l6 8 12-18-8-4-10 8-10-8Z', tipo: 'sombra' },
+    { d: 'M60 26v80M34 96h52M42 62h10M68 62h10', tipo: 'traco' },
   ],
   blazer: [
-    ['c', 'M42 14 L22 22 L8 96 L24 100 L33 56 L32 110 L88 110 L87 56 L96 100 L112 96 L98 22 L78 14 L60 22 Z'],
-    ['s', 'M42 14 L60 22 L78 14 L84 24 L72 34 L78 40 L60 70 L42 40 L48 34 L36 24 Z'],
-    ['l', 'M50 16 L60 22 L70 16 L60 60 Z'],
-    ['t', 'M60 70 L60 110 M56 80 h.1 M56 92 h.1 M38 84 L50 84 M70 84 L82 84'],
-  ],
-  casaco: [
-    ['c', 'M42 10 L22 18 L8 92 L24 96 L33 52 L30 114 L90 114 L87 52 L96 96 L112 92 L98 18 L78 10 L60 20 Z'],
-    ['s', 'M42 10 L60 20 L78 10 L84 22 L72 32 L77 38 L60 62 L43 38 L48 32 L36 22 Z'],
-    ['t', 'M60 62 L60 114 M56 72 h.1 M56 86 h.1 M56 100 h.1 M36 80 L48 82 M72 82 L84 80'],
+    { d: 'M42 14 22 24 8 96l16 4 8-44v54h56V56l8 44 16-4-14-72-20-10-18 26Z' },
+    { d: 'M42 14 60 62 52 40l-8-4 6-6ZM78 14 60 62l8-22 8-4-6-6Z', tipo: 'sombra' },
+    { d: 'M60 62v48M60 74h.1M60 88h.1M38 84h12M70 84h12', tipo: 'traco' },
   ],
   bone: [
-    ['c', 'M18 72 C16 42 40 26 63 28 C86 30 99 46 99 68 L99 76 L18 78 Z'],
-    ['s', 'M99 66 L117 73 C117 82 104 84 96 80 L18 80 L18 74 L99 72 Z'],
-    ['t', 'M62 28 C54 44 52 60 52 76 M63 28 C76 42 80 58 80 74'],
-    ['s', 'M58 24 h9 v5 h-9 Z'],
+    { d: 'M18 72c0-30 24-46 46-44s34 18 34 38l20 8c-2 8-14 8-22 4H18Z' },
+    { d: 'M98 66l20 8c-2 8-14 8-22 4Z', tipo: 'sombra' },
+    { d: 'M60 28c-10 12-12 30-10 50M60 28c10 12 16 26 18 42', tipo: 'traco' },
   ],
   gorro: [
-    ['c', 'M24 88 C22 44 40 20 60 20 C80 20 98 44 96 88 Z'],
-    ['s', 'M20 84 L100 84 L100 101 L20 101 Z'],
-    ['t', 'M34 86 v13 M47 86 v13 M60 86 v13 M73 86 v13 M86 86 v13'],
-    ['c', 'M53 12 a7 7 0 1 0 14 0 a7 7 0 1 0 -14 0 Z'],
+    { d: 'M24 88c-2-44 16-68 36-68s38 24 36 68Z' },
+    { d: 'M20 84h80v16H20Z', tipo: 'sombra' },
+    { d: 'M36 84v16M52 84v16M68 84v16M84 84v16', tipo: 'traco' },
   ],
   cinto: [
-    ['c', 'M60 22 C84 22 100 36 100 58 C100 82 82 98 60 98 C38 98 20 82 20 58 C20 36 36 22 60 22 Z M60 38 C46 38 36 46 36 58 C36 72 46 82 60 82 C74 82 84 72 84 58 C84 46 74 38 60 38 Z'],
-    ['b', 'M50 84 h22 v18 h-22 Z'],
-    ['t', 'M56 90 h10 v6 h-10 Z'],
+    { d: 'M60 26a34 34 0 1 0 .1 0Zm0 12a22 22 0 1 1-.1 0Z' },
+    { d: 'M84 52h24v16H84Z', tipo: 'sombra' },
+    { d: 'M90 56h12v8H90Z', tipo: 'luz' },
   ],
   relogio: [
-    ['c', 'M48 8 h24 l3 30 h-30 Z M45 82 h30 l-3 30 h-24 Z'],
-    ['s', 'M60 34 a26 26 0 1 0 .1 0 Z'],
-    ['b', 'M60 41 a19 19 0 1 0 .1 0 Z'],
-    ['t', 'M60 48 L60 60 L69 65'],
+    { d: 'M48 8h24l4 30H44ZM44 82h32l-4 30H48Z' },
+    { d: 'M60 34a26 26 0 1 0 .1 0Z', tipo: 'sombra' },
+    { d: 'M60 42a18 18 0 1 0 .1 0Z', tipo: 'luz' },
+    { d: 'M60 50v10l8 6', tipo: 'traco' },
   ],
   oculos: [
-    ['c', 'M10 50 h42 c0 20 -8 28 -21 28 c-13 0 -21 -8 -21 -28 Z M68 50 h42 c0 20 -8 28 -21 28 c-13 0 -21 -8 -21 -28 Z'],
-    ['t', 'M52 54 C56 50 64 50 68 54 M10 50 L4 46 M110 50 L116 46'],
+    { d: 'M8 46h44v10c0 14-8 22-20 22S10 70 8 56ZM68 46h44l-2 10c-2 14-10 22-22 22s-20-8-20-22Z' },
+    { d: 'M52 50c4-4 12-4 16 0', tipo: 'traco' },
   ],
   cachecol: [
-    ['c', 'M30 30 C30 14 90 14 90 30 C90 46 30 46 30 30 Z M50 42 L44 104 L60 104 L64 44 Z M68 44 L72 92 L86 92 L80 42 Z'],
-    ['s', 'M42 30 C42 24 78 24 78 30 C78 36 42 36 42 30 Z'],
-    ['t', 'M44 98 h16 M72 86 h14'],
+    { d: 'M26 30c20-16 48-16 68 0 10 10 4 26-14 30l6 44H62l-4-36c-16 2-34-2-38-14-2-10 0-18 6-24Z' },
+    { d: 'M62 104h24M26 44c18 12 50 12 68 0M64 92h22', tipo: 'traco' },
   ],
   mochila: [
-    ['c', 'M34 32 C34 18 86 18 86 32 L92 100 C92 106 88 110 82 110 L38 110 C32 110 28 106 28 100 Z'],
-    ['s', 'M40 66 h40 a4 4 0 0 1 4 4 v26 a4 4 0 0 1 -4 4 h-40 a4 4 0 0 1 -4 -4 v-26 a4 4 0 0 1 4 -4 Z'],
-    ['t', 'M48 22 C48 6 72 6 72 22 M36 54 h48 M52 78 h16'],
+    { d: 'M34 30c0-12 10-20 26-20s26 8 26 20v8c8 4 10 12 10 22v44c0 4-4 8-8 8H32c-4 0-8-4-8-8V60c0-10 2-18 10-22Zm10 2h32c0-6-6-12-16-12s-16 6-16 12Z' },
+    { d: 'M38 70h44v28c0 2-2 4-4 4H42c-2 0-4-2-4-4Z', tipo: 'sombra' },
+    { d: 'M38 56h44', tipo: 'traco' },
   ],
 }
 
-const FORMA_DA_CATEGORIA: Record<string, string> = {
+const POR_CATEGORIA: Record<string, string> = {
   camiseta: 'camiseta', regata: 'regata', polo: 'polo',
   'camisa-casual': 'camisa', 'camisa-social': 'camisa',
   moletom: 'moletom', sueter: 'sueter',
@@ -141,57 +126,42 @@ const FORMA_DA_CATEGORIA: Record<string, string> = {
   tenis: 'tenis', 'tenis-casual': 'tenis', 'sapato-social': 'sapato', mocassim: 'sapato',
   bota: 'bota', chinelo: 'chinelo', sandalia: 'chinelo',
   'jaqueta-jeans': 'jaqueta', 'jaqueta-couro': 'jaqueta', 'corta-vento': 'jaqueta',
-  blazer: 'blazer', casaco: 'casaco',
+  blazer: 'blazer', casaco: 'blazer',
   bone: 'bone', gorro: 'gorro', cinto: 'cinto', relogio: 'relogio',
   oculos: 'oculos', cachecol: 'cachecol', mochila: 'mochila',
 }
 
-const FORMA_DO_PAPEL: Record<Papel, string> = {
+const POR_PAPEL: Record<string, string> = {
   superior: 'camiseta', inferior: 'calca', calcado: 'tenis',
-  sobreposicao: 'jaqueta', acessorio: 'mochila',
+  sobreposicao: 'jaqueta', acessorio: 'bone',
 }
 
-function rgb(hex: string): [number, number, number] {
-  const limpo = /^#?[0-9a-f]{6}$/i.test(hex) ? hex.replace('#', '') : '8c8c8c'
-  const n = parseInt(limpo, 16)
-  return [n >> 16, (n >> 8) & 255, n & 255]
+function claridade(hex: string): number {
+  const n = parseInt(hex.replace('#', ''), 16)
+  return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
 }
 
-function misturar(hex: string, alvo: number, quanto: number): string {
-  const [r, g, b] = rgb(hex).map((c) => Math.round(c + (alvo - c) * quanto))
-  return `rgb(${r},${g},${b})`
-}
-
-/** Luminância relativa (WCAG), para decidir a cor do contorno. */
-function luminancia(hex: string): number {
-  const [r, g, b] = rgb(hex).map((c) => {
-    const v = c / 255
-    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+/** Texto SVG da silhueta de uma peça, na cor dela. */
+export function svgDaPeca(categoria: string, papel: string, corHex: string): string {
+  const cor = /^#[0-9a-f]{6}$/i.test(corHex) ? corHex : '#8c8c8c'
+  const formas = FORMAS[POR_CATEGORIA[categoria] ?? POR_PAPEL[papel] ?? 'camiseta']
+  const escura = claridade(cor) < 0.35
+  // sombra e traço mudam de lado conforme a cor: numa peça preta, o detalhe
+  // precisa ser mais claro para aparecer
+  const sombra = escura ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.14)'
+  const traco = escura ? 'rgba(255,255,255,.34)' : 'rgba(0,0,0,.28)'
+  const contorno = escura ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.22)'
+  const partes = formas.map(({ d, tipo = 'corpo' }) => {
+    if (tipo === 'traco') {
+      return `<path d="${d}" fill="none" stroke="${traco}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`
+    }
+    if (tipo === 'sombra') return `<path d="${d}" fill="${sombra}"/>`
+    if (tipo === 'luz') return `<path d="${d}" fill="rgba(255,255,255,.82)" stroke="${contorno}" stroke-width="1"/>`
+    return `<path d="${d}" fill="${cor}" stroke="${contorno}" stroke-width="1.4" stroke-linejoin="round" fill-rule="evenodd"/>`
   })
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">${partes.join('')}</svg>`
 }
 
-/** SVG completo da silhueta de uma peça, na cor dela. */
-export function svgDaPeca(categoria: string, papel: Papel, corHex: string): string {
-  const forma = FORMAS[FORMA_DA_CATEGORIA[categoria] ?? FORMA_DO_PAPEL[papel]] ?? FORMAS.camiseta
-  const escura = luminancia(corHex) < 0.08
-  // peça escura: a "sombra" clareia, senão some; o contorno acompanha
-  const sombra = escura ? misturar(corHex, 255, 0.16) : misturar(corHex, 0, 0.2)
-  const luz = misturar(corHex, 255, 0.3)
-  const traco = escura ? 'rgba(255,255,255,.34)' : 'rgba(0,0,0,.3)'
-  const contorno = escura ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.2)'
-  const partes = forma
-    .map(([tipo, d]) => {
-      if (tipo === 't')
-        return `<path d="${d}" fill="none" stroke="${traco}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`
-      const cor = tipo === 'c' ? corHex : tipo === 's' ? sombra : tipo === 'l' ? luz : '#f1efe9'
-      const borda = tipo === 'c' || tipo === 'b' ? ` stroke="${contorno}" stroke-width="1.2"` : ''
-      return `<path d="${d}" fill="${cor}" fill-rule="evenodd" stroke-linejoin="round"${borda}/>`
-    })
-    .join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="480" height="480">${partes}</svg>`
-}
-
-export function silhuetaComoUrl(categoria: string, papel: Papel, corHex: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgDaPeca(categoria, papel, corHex))}`
+export function silhuetaComoUrl(categoria: string, papel: string, corHex: string): string {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svgDaPeca(categoria, papel, corHex))}`
 }

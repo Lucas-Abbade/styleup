@@ -1,158 +1,148 @@
-/**
- * Sessão do usuário, igual para o Supabase e para o modo demonstração.
- * O resto do app só conhece `useSessao`, `tokenAtual` e as ações daqui.
- */
-import { useEffect, useState } from 'react'
-import { API_URL, MODO_DEMO } from './config'
+// Sessão do usuário, com a mesma interface no modo real (Supabase Auth) e no
+// modo demonstração (nome guardado no aparelho, sem senha).
+import { useSyncExternalStore } from 'react'
+import { MODO_DEMO } from './config'
 import { supabase } from './supabase'
 
 export interface Sessao {
+  id: string
   token: string
-  usuarioId: string | null // no modo demonstração vem depois, do /perfil
   email: string | null
   nome: string | null
   demo: boolean
 }
 
 const CHAVE_DEMO = 'styleup.demo'
-const ouvintes = new Set<(s: Sessao | null) => void>()
 let atual: Sessao | null = null
-let pronta = false
+let carregada = false
+const ouvintes = new Set<() => void>()
 
-function avisar(sessao: Sessao | null) {
-  atual = sessao
-  pronta = true
-  ouvintes.forEach((o) => o(sessao))
+function publicar(nova: Sessao | null) {
+  atual = nova
+  carregada = true
+  ouvintes.forEach((avisar) => avisar())
 }
 
-function lerDemo(): Sessao | null {
+function ler(chave: string): string | null {
   try {
-    const bruto = localStorage.getItem(CHAVE_DEMO)
-    if (!bruto) return null
-    const { nome, email } = JSON.parse(bruto)
-    const apelido = String(email || nome || 'visitante')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .slice(0, 40)
-    return { token: `demo:${apelido}`, usuarioId: null, email, nome, demo: true }
+    return localStorage.getItem(chave)
   } catch {
-    return null
+    return null // navegação privada ou armazenamento bloqueado
   }
+}
+
+function sessaoDemo(nome: string): Sessao {
+  const apelido = nome.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'visitante'
+  return { id: `demo-${apelido}`, token: `demo:${apelido}`, email: `${apelido}@demo.styleup.app`, nome, demo: true }
 }
 
 function iniciar() {
-  if (MODO_DEMO) {
-    avisar(lerDemo())
+  if (MODO_DEMO || !supabase) {
+    const nome = ler(CHAVE_DEMO)
+    publicar(nome ? sessaoDemo(nome) : null)
     return
   }
-  const paraSessao = (s: any): Sessao | null =>
-    s
-      ? {
-          token: s.access_token,
-          usuarioId: s.user.id,
-          email: s.user.email ?? null,
-          nome: s.user.user_metadata?.nome ?? null,
-          demo: false,
-        }
-      : null
-  supabase!.auth.getSession().then(({ data }) => avisar(paraSessao(data.session)))
-  // O callback fica síncrono de propósito: chamar outro método do Supabase aqui
-  // dentro pode travar o cliente (deadlock documentado do auth-js).
-  supabase!.auth.onAuthStateChange((_evento, s) => avisar(paraSessao(s)))
+  const converter = (s: { access_token: string; user: { id: string; email?: string; user_metadata?: Record<string, unknown> } } | null): Sessao | null =>
+    s && {
+      id: s.user.id,
+      token: s.access_token,
+      email: s.user.email ?? null,
+      nome: (s.user.user_metadata?.nome as string | undefined) ?? null,
+      demo: false,
+    }
+  supabase.auth.getSession().then(({ data }) => publicar(converter(data.session)))
+  // O retorno é síncrono de propósito: chamar outros métodos do Supabase dentro
+  // deste callback pode travar a renovação do token.
+  supabase.auth.onAuthStateChange((_evento, s) => publicar(converter(s)))
 }
 iniciar()
 
 export function useSessao(): { sessao: Sessao | null; carregando: boolean } {
-  const [estado, setEstado] = useState({ sessao: atual, carregando: !pronta })
-  useEffect(() => {
-    const ouvinte = (sessao: Sessao | null) => setEstado({ sessao, carregando: false })
-    ouvintes.add(ouvinte)
-    if (pronta) ouvinte(atual)
-    return () => void ouvintes.delete(ouvinte)
-  }, [])
-  return estado
+  const sessao = useSyncExternalStore(
+    (avisar) => {
+      ouvintes.add(avisar)
+      return () => ouvintes.delete(avisar)
+    },
+    () => atual,
+  )
+  return { sessao, carregando: !carregada }
 }
 
-/** Token para o cabeçalho Authorization; renovado pelo Supabase quando preciso. */
-export async function tokenAtual(): Promise<string | null> {
-  if (MODO_DEMO) return atual?.token ?? null
-  const { data } = await supabase!.auth.getSession()
-  return data.session?.access_token ?? null
+export function sessaoAtual(): Sessao | null {
+  return atual
 }
 
 export function usuarioIdAtual(): string | null {
-  return atual?.usuarioId ?? null
+  return atual?.id ?? null
 }
+
+/** Token válido para chamar a API (o Supabase renova quando está perto de expirar). */
+export async function tokenAtual(): Promise<string | null> {
+  if (MODO_DEMO || !supabase) return atual?.token ?? null
+  const { data } = await supabase.auth.getSession()
+  return data.session?.access_token ?? null
+}
+
+const TRADUCOES: [RegExp, string][] = [
+  [/invalid login credentials/i, 'E-mail ou senha incorretos.'],
+  [/email not confirmed/i, 'Confirme o seu e-mail antes de entrar (veja a caixa de entrada).'],
+  [/already registered|already been registered/i, 'Este e-mail já tem conta. Tente entrar.'],
+  [/password should be at least/i, 'A senha precisa ter pelo menos 6 caracteres.'],
+  [/rate limit|too many/i, 'Muitas tentativas. Espere um minuto e tente de novo.'],
+  [/failed to fetch|network/i, 'Sem conexão. Verifique a internet e tente de novo.'],
+]
 
 function traduzir(mensagem: string): string {
-  const m = mensagem.toLowerCase()
-  if (m.includes('invalid login')) return 'E-mail ou senha incorretos.'
-  if (m.includes('already registered')) return 'Já existe uma conta com este e-mail.'
-  if (m.includes('email not confirmed')) return 'Confirme seu e-mail antes de entrar.'
-  if (m.includes('password should be')) return 'A senha precisa ter pelo menos 6 caracteres.'
-  if (m.includes('rate limit') || m.includes('too many'))
-    return 'Muitas tentativas. Aguarde um pouco e tente de novo.'
-  if (m.includes('fetch') || m.includes('network'))
-    return 'Sem conexão. Verifique a internet e tente de novo.'
-  return 'Não foi possível concluir. Tente de novo.'
+  return TRADUCOES.find(([padrao]) => padrao.test(mensagem))?.[1] ?? mensagem
 }
 
-/** Devolve `null` quando deu certo, ou a mensagem de erro para a tela. */
-export async function entrar(email: string, senha: string): Promise<string | null> {
-  if (MODO_DEMO) {
-    localStorage.setItem(CHAVE_DEMO, JSON.stringify({ email, nome: email.split('@')[0] }))
-    avisar(lerDemo())
-    return null
-  }
-  const { error } = await supabase!.auth.signInWithPassword({ email, password: senha })
-  return error ? traduzir(error.message) : null
+export async function entrar(email: string, senha: string): Promise<void> {
+  if (MODO_DEMO || !supabase) return entrarDemo(email.split('@')[0])
+  const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
+  if (error) throw new Error(traduzir(error.message))
 }
 
-/** `confirmar: true` quando o Supabase exige confirmação por e-mail. */
-export async function criarConta(
-  nome: string,
-  email: string,
-  senha: string,
-): Promise<{ erro: string | null; confirmar: boolean }> {
-  if (MODO_DEMO) {
-    localStorage.setItem(CHAVE_DEMO, JSON.stringify({ email, nome }))
-    const demo = lerDemo()
-    // no Supabase o nome vai nos metadados do cadastro; aqui, direto ao perfil
-    await fetch(`${API_URL}/perfil`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${demo?.token}` },
-      body: JSON.stringify({ nome }),
-    }).catch(() => undefined)
-    avisar(demo)
-    return { erro: null, confirmar: false }
+/** Devolve true quando a conta depende de confirmação por e-mail. */
+export async function criarConta(nome: string, email: string, senha: string): Promise<boolean> {
+  if (MODO_DEMO || !supabase) {
+    entrarDemo(nome)
+    return false
   }
-  const { data, error } = await supabase!.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password: senha,
     options: { data: { nome } },
   })
-  if (error) return { erro: traduzir(error.message), confirmar: false }
-  return { erro: null, confirmar: !data.session }
+  if (error) throw new Error(traduzir(error.message))
+  return !data.session
 }
 
-export async function recuperarSenha(email: string): Promise<string | null> {
-  if (MODO_DEMO) return null
-  const { error } = await supabase!.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin,
-  })
-  return error ? traduzir(error.message) : null
+export async function recuperarSenha(email: string): Promise<void> {
+  if (MODO_DEMO || !supabase) return
+  const { error } = await supabase.auth.resetPasswordForEmail(email)
+  if (error) throw new Error(traduzir(error.message))
+}
+
+export function entrarDemo(nome: string): void {
+  const limpo = nome.trim() || 'Visitante'
+  try {
+    localStorage.setItem(CHAVE_DEMO, limpo)
+  } catch {
+    /* sem armazenamento: a sessão vale só até recarregar */
+  }
+  publicar(sessaoDemo(limpo))
 }
 
 export async function sair(): Promise<void> {
-  // nada do usuário anterior pode sobrar num aparelho compartilhado
+  // nada do usuário anterior pode ficar no aparelho (ele pode ser compartilhado)
   try {
     Object.keys(localStorage)
       .filter((k) => k.startsWith('styleup.'))
       .forEach((k) => localStorage.removeItem(k))
     if ('caches' in window) await caches.delete('fotos-pecas')
   } catch {
-    /* armazenamento indisponível: segue */
+    /* limpeza é melhor esforço */
   }
-  if (MODO_DEMO) avisar(null)
-  else await supabase!.auth.signOut()
+  if (MODO_DEMO || !supabase) return publicar(null)
+  await supabase.auth.signOut()
 }
