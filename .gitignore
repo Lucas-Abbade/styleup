@@ -37,3 +37,6 @@ backend/avaliacao/relatorio.*
 # Saídas de teste do frontend
 frontend/test-results/
 frontend/playwright-report/
+
+# TypeScript
+*.tsbuildinfo

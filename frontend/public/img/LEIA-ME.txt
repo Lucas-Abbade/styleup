@@ -1,0 +1,9 @@
+Fotos opcionais do app.
+
+Coloque aqui as fotos do protótipo para substituir as ilustrações:
+
+  splash.jpg   fundo da tela inicial (retrato, ~1170 x 2532)
+  hero.jpg     destaque da Início e do Gerador (paisagem, ~1200 x 800)
+
+Sem esses arquivos o app mostra a ilustração vetorial da arara de roupas.
+Use apenas imagens que a equipe tem direito de usar.
