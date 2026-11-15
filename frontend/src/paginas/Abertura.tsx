@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import Arara from '../componentes/Arara'
 import { MODO_DEMO } from '../lib/config'
 
-const FOTO = import.meta.env.VITE_FOTO_ABERTURA as string | undefined
+// foto opcional (public/img/LEIA-ME.txt); sem ela, a ilustração vetorial
+const FOTO = (import.meta.env.VITE_FOTO_ABERTURA as string | undefined) ?? '/img/splash.jpg'
 
 export default function Abertura() {
   return (

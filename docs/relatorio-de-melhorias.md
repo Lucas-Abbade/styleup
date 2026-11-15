@@ -167,7 +167,8 @@ abaixo são fáceis de mudar e estão num lugar só:
 
 Sobre os commits: o roteiro pedia um por item. Como a troca do acesso a dados atravessa
 quase todas as rotas, o trabalho ficou em cinco commits por área (motor, banco, API,
-frontend, documentação), cada um listando os itens que resolve.
+frontend, documentação), cada um listando os itens que resolve; a integração final do
+frontend tem commit próprio.
 
 ## 8. Além do roteiro
 
@@ -182,4 +183,30 @@ título e resumo de cada look; avisos quando algo foi flexibilizado.
 categoria; recorte sem fundo devolvido à interface (só ele é armazenado); mais nomes de
 cor (grafite, verde-oliva, cáqui, caramelo, mostarda, azul-claro); sinal de baixa confiança.
 
-**Frontend** — ver o commit `feat(front)` e as capturas geradas por `e2e/fluxo_demo.py`.
+**Frontend** — ver os commits `feat(front)` e as capturas em `docs/capturas/`, geradas
+por `e2e/fluxo_demo.py`.
+
+## 9. Verificação final
+
+O frontend foi escrito em duas levas: a primeira (telas de cadastro, gerador, look e
+perfil, cópia offline, exportação) e a segunda (base de dados, sessão, Início,
+Guarda-Roupa e folha de estilos). A integração das duas acertou os nomes da API, o id da
+sessão (chave da cópia local por usuário), o perfil compartilhado por contexto, um único
+estado para o look em exibição e os estilos das telas que tinham ficado sem CSS.
+
+| Verificação | Resultado |
+|---|---|
+| `pytest` (backend) | 186 testes passando |
+| `supabase/testes/rodar.sh` | migrações aplicam, reaplicam, revertem; casos SQL passam |
+| `tsc --noEmit` e `vite build` | sem erros; maior pedaço inicial 68 kB gzip |
+| `e2e/fluxo_demo.py` (Chrome, 390×844) | fluxo inteiro, sem erro no console |
+| axe-core, WCAG 2.0/2.1/2.2 A e AA, em 10 telas | nenhuma violação |
+
+Defeitos que só apareceram no teste ponta a ponta, já corrigidos:
+
+- **Área logada inteira quebrava ao entrar.** Um `useEffect(() => window.scrollTo(0, 0))`
+  devolvia o retorno de `scrollTo` — que no Chrome atual é uma Promise — e o React o
+  tratava como função de limpeza ("destroy is not a function").
+- **Contraste dos rótulos inativos da barra inferior**: 4,0:1, abaixo dos 4,5:1 exigidos;
+  agora 5,2:1.
+

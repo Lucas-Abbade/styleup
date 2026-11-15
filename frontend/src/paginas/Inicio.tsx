@@ -9,7 +9,8 @@ import { gerador } from '../lib/gerador'
 import { silhuetaComoUrl } from '../lib/silhuetas'
 import { primeiroNome, useCarga } from '../lib/util'
 
-const FOTO = import.meta.env.VITE_FOTO_DESTAQUE as string | undefined
+// foto opcional (public/img/LEIA-ME.txt); sem ela, a ilustração vetorial
+const FOTO = (import.meta.env.VITE_FOTO_DESTAQUE as string | undefined) ?? '/img/hero.jpg'
 
 // Curadoria da casa: cada cartão abre o gerador já com o estilo escolhido.
 const TENDENCIAS = [
