@@ -1,7 +1,6 @@
 # StyleUp
 
-Sistema de catalogação de vestuário masculino por foto, com recomendação de looks
-conforme clima e ocasião. Projeto da disciplina de Projeto de Software — Engenharia
+Sistema de catalogação de vestuário masculino por oto, com recomendação de looksconforme clima e ocasião. Projeto da disciplina de Projeto de Software — Engenharia
 de Computação e Automação, UFMT.
 
 ## Como funciona
@@ -18,9 +17,10 @@ de Computação e Automação, UFMT.
 | Módulo | Onde está | O que faz |
 |---|---|---|
 | M1–M2 catalogação | `backend/app/services/visao.py`, `cor.py` | Recorta a peça, classifica (FashionCLIP zero-shot) e nomeia a cor |
-| M3 guarda-roupa | `backend/app/routers/pecas.py` | Cadastro, edição, disponibilidade e remoção (com a foto) |
+| M3 guarda-roupa | `backend/app/routers/pecas.py` |
+ Cadastro, edição, disponibilidade e remoção (com a foto) |
 | M4 contexto | `services/clima.py`, `interpretacao.py` | Clima (Open-Meteo, em cache) e leitura do pedido em texto livre |
-| M5 recomendação | `services/recomendador.py` | Filtros → combinações → score de 5 critérios → 3 looks diversos |
+ M5 recomendação | `services/recomendador.py` | Filtros → combinações → score de 5 critérios → 3 looks diversos |
 | M6 explicação e feedback | `services/explicacao.py`, `routers/feedback.py` | Justificativa por template e ajuste dos pesos |
 | Privacidade (LGPD) | `routers/perfil.py`, `termo.py` | Consentimento, exportação e exclusão da conta |
 | Acesso a dados | `backend/app/repositorio/` | Supabase (um cliente por requisição) ou memória (demonstração e testes) |
